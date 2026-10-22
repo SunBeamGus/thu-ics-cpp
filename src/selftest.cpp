@@ -102,6 +102,20 @@ void testLoginPageParsing() {
     check(thu::parseTrustDevice("") == thu::TrustDevice::Ask, "trust device: empty");
 }
 
+void testTotpWindow() {
+    std::printf("totp window:\n");
+    check(thu::totpWindowEndsAt(0) == 30, "window ends at 30 (t=0)");
+    check(thu::totpWindowEndsAt(29) == 30, "window ends at 30 (t=29)");
+    check(thu::totpWindowEndsAt(30) == 60, "window ends at 60 (t=30)");
+    check(thu::totpWindowEndsAt(31) == 60, "window ends at 60 (t=31)");
+    const long long now = 1730000000;
+    const long long end = thu::totpWindowEndsAt(now);
+    check(end > now, "window end is in the future");
+    check(end - now <= 30, "window end at most one step away");
+    check(thu::totpWindowEndsAt(59, 60) == 60, "custom step 60");
+    check(thu::totpWindowEndsAt(60, 0) == 90, "invalid step falls back to 30");
+}
+
 void testScheduleParsing() {
     std::printf("schedule parsing:\n");
     const std::string calendarRaw =
@@ -209,6 +223,7 @@ bool run(std::string &report) {
     testJson();
     testDates();
     testLoginPageParsing();
+    testTotpWindow();
     testScheduleParsing();
     testIcs();
     if (gFailures == 0) {

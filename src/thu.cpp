@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
+#include <ctime>
 #include <iostream>
 #include <map>
 #include <regex>
@@ -158,6 +159,11 @@ TrustDevice parseTrustDevice(const std::string &text) {
         return TrustDevice::No;
     }
     return TrustDevice::Ask;
+}
+
+long long totpWindowEndsAt(long long nowSeconds, int step) {
+    long long period = step > 0 ? step : 30;
+    return (nowSeconds / period + 1) * period;
 }
 
 std::string extractSm2PublicKey(const std::string &html) {
@@ -319,13 +325,35 @@ std::string Session::handleTwoFactor() {
     };
 
     jsonx::Json verifyResult;
-    for (int attempt = 0; attempt < 5; ++attempt) {
+    bool verified = false;
+    const long long now = static_cast<long long>(std::time(nullptr));
+
+    // 同一次运行里再次触发两步验证（例如 WebVPN 会话失效后重新登录）时，如果
+    // 刚才那个验证码还没过 30 秒窗口，就先直接复用它，不必再问一遍。
+    if (!lastTotpCode_.empty() && now < lastTotpValidUntil_) {
+        verifyResult = verify(lastTotpCode_);
+        if (verifyResult.getString("result") == "success") {
+            std::printf("⏱ 刚才的 TOTP 验证码仍在有效期内，直接复用。\n");
+            verified = true;
+        } else {
+            std::printf("⏱ 刚才的验证码已失效，请重新输入。\n");
+            lastTotpCode_.clear();
+            lastTotpValidUntil_ = 0;
+        }
+    }
+
+    for (int attempt = 0; !verified && attempt < 5; ++attempt) {
         std::string code = promptTotpCode();
         verifyResult = verify(code);
-        if (verifyResult.getString("result") == "success") break;
+        if (verifyResult.getString("result") == "success") {
+            lastTotpCode_ = code;
+            lastTotpValidUntil_ = totpWindowEndsAt(static_cast<long long>(std::time(nullptr)));
+            verified = true;
+            break;
+        }
         std::printf("❌ 验证码校验失败：%s\n", verifyResult.getString("msg", "未知错误").c_str());
     }
-    if (verifyResult.getString("result") != "success") {
+    if (!verified) {
         throw std::runtime_error("两步验证码校验失败：多次输入仍未通过。");
     }
 

@@ -98,7 +98,7 @@ powershell -ExecutionPolicy Bypass -File .\build.ps1
 ```
 
 测试覆盖 SM2 标准向量与加解密、SM3、JSON、日期换算、学期与课表解析、
-ICS 生成与折行，以及两步验证的设备信任选项解析。
+ICS 生成与折行，以及两步验证的设备信任选项解析和 TOTP 有效期窗口计算。
 
 ## 配置凭据
 
@@ -131,6 +131,10 @@ notepad .\.env
 > 如果账号启用了 TOTP 两步验证，登录时程序会暂停并提示：
 > `请输入身份验证器 App 中的 6 位 TOTP 验证码`。输入当前 6 位数字即可，
 > 不需要把密钥保存到任何文件；输入 `q` 可取消。
+>
+> 验证码通过后会在服务端当前 30 秒窗口内被记住：同一次运行里如果因为 WebVPN
+> 会话失效而再次触发两步验证，只要还在这个窗口内就直接复用、不再询问；
+> 若服务端判定它已失效，则提示「刚才的验证码已失效，请重新输入」并要求重输。
 >
 > 验证码通过后还会问一次**是否在清华 ID 内信任本设备**（`[y/N]`，默认不信任）：
 > - 选 `y`：调用 `b/doubleAuth/personal/saveFinger` 登记本机指纹，以后登录通常
@@ -309,14 +313,17 @@ schtasks /Delete /TN "THU Courses ICS" /F
    `i_user` / `i_pass` / `fingerPrint` / `fingerGenPrint` / `i_captcha`；
 4. 若返回“二次认证”，走 `b/doubleAuth/login` 的
    `FIND_APPROACHES` → `SEND_CODE(type=totp)`，然后提示你在终端**手动输入
-   6 位 TOTP 验证码**，再调用 `VERITY_TOTP_CODE`；通过后按
-   `THU_TRUST_DEVICE` / `--trust-device` / `--no-trust-device` 的决定（没配置时
-   当场询问）调用 `b/doubleAuth/personal/saveFinger` 登记本机指纹；
+   6 位 TOTP 验证码**，再调用 `VERITY_TOTP_CODE`；通过后就记住这个验证码及其
+   30 秒窗口的结束时刻，窗口内再次触发两步验证时先直接复用（服务端拒绝则清空
+   并重新询问）；通过后按 `THU_TRUST_DEVICE` / `--trust-device` /
+   `--no-trust-device` 的决定（没配置时当场询问）调用
+   `b/doubleAuth/personal/saveFinger` 登记本机指纹；
 5. 从成功页取回调链接，建立 WebVPN 会话，再执行一次
    `form/10000ea...` 的 ID 登录和 `oauth.tsinghua.edu.cn/lb-auth/lbredirect`
    跳转。
 
-验证码不会被保存，也不会出现在日志中；如果连续输错，会提示重新输入。
+验证码不会被保存到磁盘，也不会出现在日志中；如果连续输错，会提示重新输入。
+复用的范围仅限本次进程（窗口结束即作废），下次运行仍会重新询问。
 
 SM2 使用内置的 256 位 Montgomery 模运算 + Jacobian 坐标实现，SM3 按
 GB/T 32918 实现；已用 `sm-crypto` 生成的密文做双向交叉验证。

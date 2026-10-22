@@ -65,6 +65,11 @@ class Session {
     Options options_;
     http::HttpClient http_;
     bool loggedIn_ = false;
+
+    // 上一次被服务器接受过的 TOTP 验证码，以及它所在的 30 秒窗口的结束时刻
+    // （epoch 秒）。同一次运行里再次触发两步验证时，窗口内直接复用、不再询问。
+    std::string lastTotpCode_;
+    long long lastTotpValidUntil_ = 0;
 };
 
 std::string extractSm2PublicKey(const std::string &html);
@@ -75,5 +80,10 @@ std::string normalizeTotpCode(const std::string &input);
 // "1"/"y"/"yes"/"true"/"on" -> Yes, "0"/"n"/"no"/"false"/"off" -> No,
 // anything else (including empty and "ask") -> Ask.
 TrustDevice parseTrustDevice(const std::string &text);
+
+// End of the TOTP window that contains `nowSeconds`: the code is valid until
+// then, so it does not have to be asked for again inside the same window.
+// `step` is the TOTP period in seconds (30 by default).
+long long totpWindowEndsAt(long long nowSeconds, int step = 30);
 
 } // namespace thu
