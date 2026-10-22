@@ -4,7 +4,7 @@
 生成可供日历 App 订阅的 iCalendar 文件。每次按学号写一个文件，默认输出到：
 
 ```
-res/<学号>.ics
+res/<代号>.ics
 ```
 
 既支持单人使用，也支持多学生批量生成（见[多学生 / 批量生成](#多学生--批量生成)）。
@@ -51,7 +51,7 @@ res/<学号>.ics
    - **留空或 `n`**：不导出。
 6. 复制完会自动在站点仓库里 `git add` → `git commit` → `git push`，成功后打印提交号。
 7. 结束时窗口停在 `Press any key to continue . . .`，按任意键关闭；
-   本地文件在 `res\<学号>.ics`。
+   本地文件在 `res\<代号>.ics`。
 
 > 想改已记住的目标：编辑 `.env` 里的 `THU_PUBLISH_DIR`，或临时用
 > `-Publish <目录>` 覆盖；命令行加 `-NoPush` 则只复制不提交。
@@ -122,8 +122,9 @@ notepad .\.env
 | `THU_PASSWORD` | 是* | 信息门户密码 |
 | `THU_ACCOUNTS` | 否 | 账号列表文件路径，用于批量生成（见[多学生 / 批量生成](#多学生--批量生成)） |
 | `THU_SEMESTER_INDEX` | 否 | 抓取下学期：`nextSemesterList` 下标，0 起；留空为当前学期 |
-| `THU_OUTDIR` | 否 | 输出目录，默认 `res`；文件名为 `<学号>.ics` |
-| `THU_OUTPUT` | 否 | 强制指定单个输出文件（仅单账号，留空则用 `<outdir>/<学号>.ics`） |
+| `THU_OUTDIR` | 否 | 输出目录，默认 `res`；文件名为 `<代号>.ics` |
+| `THU_OUTPUT` | 否 | 强制指定单个输出文件（仅单账号，留空则用 `<outdir>/<代号>.ics`） |
+| `THU_ID_SALT` | 否 | 学号 → 代号的盐；留空则用本地 `.id-salt`（没有就自动生成） |
 | `THU_CALNAME` | 否 | 日历名称 |
 | `THU_FINGERPRINT` | 否 | 设备指纹；默认按“学号 + 计算机名”生成并保持稳定（批量模式忽略） |
 | `THU_TRUST_DEVICE` | 否 | 两步验证时是否在清华 ID 内信任本设备：留空=登录时询问一次；`1`=总是信任；`0`=从不信任 |
@@ -156,7 +157,7 @@ notepad .\.env
 
 ## 生成
 
-在仓库根目录执行（默认输出 `res\<学号>.ics`）：
+在仓库根目录执行（默认输出 `res\<代号>.ics`）：
 
 ```powershell
 .\build\thu-courses-ics.exe
@@ -177,13 +178,30 @@ powershell -ExecutionPolicy Bypass -File .\run.ps1
 🔐 正在登录清华大学信息门户（2022xxxxxx）…
 📚 正在读取学期信息…
 📅 正在读取课表：2026-2027学年秋季学期…
-✅ 已生成 C:\...\thu-ics-cpp\res\2022xxxxxx.ics
+✅ 已生成 C:\...\thu-ics-cpp\res\3f2a9c41d7e05b68.ics
    学期：2026-2027学年秋季学期（第 1 周周一 = 2026-09-14，共 17 周）
    课程：23 门，事件：412 个
 ```
 
-文件名固定是学号，可以用 `--outdir <目录>` 换输出目录，或用 `--output <文件>`
-强行指定单个文件（仅单账号可用）。
+文件名不是学号，而是**由学号派生出的 16 位十六进制代号**（见下节）。可以用
+`--outdir <目录>` 换输出目录，或用 `--output <文件>` 强行指定单个文件
+（仅单账号可用）。
+
+### 代号（文件名）是怎么来的
+
+```
+代号 = SM3(盐 + \x1f + 学号) 的前 16 位十六进制
+```
+
+- **确定且唯一**：同一个盐下，同一学号永远得到同一个代号，不同学号不会撞车
+  （64 位，几千人规模下碰撞概率可忽略）；
+- **不可反查**：盐只保存在本地 `.id-salt`（首次运行自动生成，32 位十六进制），
+  只有拿到这个文件的人才能把代号对回学号；代号的 URL 可以放心公开；
+- 盐的来源优先级：`--id-salt` → 环境变量 / `.env` 的 `THU_ID_SALT` → 本地
+  `.id-salt` → 自动生成；
+- 程序会在生成时打印一行 `🆔 学号 … → 代号 …`，方便你自己对照；
+- ⚠️ **`.id-salt` 不要删除、不要公开**：删掉后会重新生成新的盐，所有代号都会变，
+  站点上会出现一批新的文件名，旧文件仍在。
 
 ## 多学生 / 批量生成
 
@@ -201,7 +219,7 @@ powershell -ExecutionPolicy Bypass -File .\run.ps1
 然后：
 
 ```powershell
-# 批量生成到 res\<学号>.ics
+# 批量生成到 res\<代号>.ics
 .\build\thu-courses-ics.exe --accounts accounts.txt
 
 # 或写进 .env，之后双击 run.cmd 就会全部生成
@@ -261,7 +279,7 @@ powershell -ExecutionPolicy Bypass -File .\run.ps1
 
 自动推送的行为细节：
 
-- 只 `git add` 本次复制的那几个 `<学号>.ics`，并 `git commit -- res/<学号>.ics …`，
+- 只 `git add` 本次复制的那几个 `<学号>.ics`，并 `git commit -- res/<代号>.ics …`，
   站点仓库里其它已暂存的改动不会被卷进这次提交；
 - 批量生成时一次复制 / 提交全部文件（有几个学号就是几个）；
 - 内容与上次完全一致时跳过提交，不会产生空提交；
@@ -273,15 +291,15 @@ powershell -ExecutionPolicy Bypass -File .\run.ps1
 订阅地址为（每个学号一个）：
 
 ```
-https://your-username.github.io/res/<学号>.ics
-webcal://your-username.github.io/res/<学号>.ics
+https://your-username.github.io/res/<代号>.ics
+webcal://your-username.github.io/res/<代号>.ics
 ```
 
 如果确认新文件正确，可以把站点首页（如 `index.html` / `index.md`）里的订阅链接
-从 `res/courses.ics` 切换到 `res/<学号>.ics`。
+从 `res/courses.ics` 切换到 `res/<代号>.ics`。
 
-> ⚠️ 文件名就是学号，发布到公开站点等于公开这个学号。如果站点是公开的、而你不希望
-> 暴露学号，可以改用 `--outdir` 输出到别处，或先把文件重命名成随机名再发布。
+> 发布出去的是代号文件名，不含学号；但课表内容本身（课程、教室）仍然是个人数据，
+> 只要 URL 公开，拿到链接的人都能看到课表。介意的话就别发布，或放到私有仓库。
 
 ## 可选参数
 
@@ -291,12 +309,12 @@ webcal://your-username.github.io/res/<学号>.ics
 ```
 --user-id <学号>         --password <密码>
 --accounts <文件>        --outdir <目录>
---output <文件>          --semester <N>
---calname <名称>         --proxy <host:port>
---fingerprint <hex>      --dump-dir <目录>
---trust-device           --no-trust-device
---offline <目录>         --verbose
---self-test
+--output <文件>          --id-salt <文本>
+--semester <N>           --calname <名称>
+--proxy <host:port>      --fingerprint <hex>
+--dump-dir <目录>        --trust-device
+--no-trust-device        --offline <目录>
+--verbose                --self-test
 ```
 
 `--trust-device` / `--no-trust-device` 决定两步验证后是否在清华 ID 内登记本设备；
@@ -429,8 +447,10 @@ GB/T 32918 实现；已用 `sm-crypto` 生成的密文做双向交叉验证。
 - **密码错误 / 需要验证**：错误信息会从登录页的 `msg_note` 提取；若显示
   “用户名或密码不正确”，请检查 `.env`。
 - **数据隐私**：生成的 `.ics` 一旦发布就会公开托管，任何拿到 URL 的人都能看到
-  课表；**文件名就是学号**，所以发布后学号也会一并公开。本仓库已在 `.gitignore`
-  中忽略 `res/`、`dump/` 和 `accounts.txt`，如不接受公开，请不要发布到网站仓库。
+  课表（文件名是代号、不含学号，但课表内容是真实的）。本仓库已在 `.gitignore`
+  中忽略 `res/`、`dump/`、`accounts.txt` 和 `.id-salt`，如不接受公开请不要发布。
+- **`.id-salt` 要保密**：它就是学号 ↔ 代号的钥匙，泄露后别人可以暴力比对
+  （学号空间只有十位数）。不要提交、不要发到群里。
 - **批量生成的凭据**：`accounts.txt` 里是明文密码，务必只放在本机、不要提交、
   不要放进共享目录；可以把 `--accounts` 指向仓库外的路径。
 
@@ -443,6 +463,7 @@ thu-ics-cpp/
 ├── .gitignore
 ├── .gitattributes
 ├── .env.example
+├── .id-salt            # 学号 → 代号的盐（首次运行生成，已忽略，务必保密）
 ├── accounts.txt        # 批量生成的账号列表（本地创建，已忽略）
 ├── run.cmd             # 双击运行入口（纯 ASCII 启动器）
 ├── run.ps1             # 构建检查、.env 引导、运行、复制到站点仓库

@@ -53,6 +53,9 @@ CMakeScripts/
 /accounts*.txt
 /students.txt
 
+# 学号 → 代号的盐（泄露后代号可被反查，绝不能提交）
+/.id-salt
+
 # ---------- 个人数据：抓取的原始接口数据与生成的课表 ----------
 /dump/
 /res/

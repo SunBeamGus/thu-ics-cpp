@@ -14,6 +14,7 @@
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <random>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -46,6 +47,7 @@ struct Args {
     std::string output;
     std::string outDir;
     std::string accountsFile;
+    std::string idSalt;
     std::string calName;
     std::string proxy;
     bool proxyDirect = false;
@@ -69,9 +71,10 @@ void printHelp() {
         "  --user-id <学号>        信息门户账号（或环境变量 THU_USER_ID）\n"
         "  --password <密码>       信息门户密码（或环境变量 THU_PASSWORD）\n"
         "  --semester <N>          抓取下学期课表：nextSemesterList 下标（0 起；默认当前学期）\n"
-        "  --outdir <目录>         输出目录（默认 res），每个学生写 <学号>.ics\n"
+        "  --outdir <目录>         输出目录（默认 res），每个学生写 <代号>.ics\n"
         "  --output <路径>         直接指定单个输出文件（多账号时不可用）\n"
         "  --accounts <文件>       批量生成：每行「学号,密码」，# 开头为注释（或 THU_ACCOUNTS）\n"
+        "  --id-salt <文本>        学号 → 代号的盐（或 THU_ID_SALT；缺省用本地 .id-salt）\n"
         "  --calname <名称>        日历名称（默认「清华大学课表（学期名）」）\n"
         "  --proxy <host:port>     使用 HTTP 代理；--proxy system 系统代理；--proxy direct 强制直连\n"
         "  --fingerprint <hex>     设备指纹（默认根据账号与本机名自动生成）\n"
@@ -193,11 +196,62 @@ void buildAndWrite(const std::vector<schedule::Course> &courses, const thu::Seme
     }
 }
 
-// 输出文件名固定为 <outdir>/<学号>.ics；--output 只用于显式指定单个文件。
-std::string outputPathFor(const Args &args, const std::string &userId) {
+// 输出文件名固定为 <outdir>/<学号派生代号>.ics；--output 只用于显式指定单个文件。
+std::filesystem::path exeDirectory() {
+    wchar_t buffer[MAX_PATH] = {0};
+    DWORD length = GetModuleFileNameW(nullptr, buffer, MAX_PATH);
+    if (length == 0 || length >= MAX_PATH) return std::filesystem::path();
+    return std::filesystem::path(buffer).parent_path();
+}
+
+std::string randomHex(size_t bytes) {
+    std::random_device device;
+    std::seed_seq seed{device(), device(), device(), device()};
+    std::mt19937_64 generator(seed);
+    static const char *kDigits = "0123456789abcdef";
+    std::string result;
+    result.reserve(bytes * 2);
+    for (size_t i = 0; i < bytes; ++i) {
+        unsigned value = static_cast<unsigned>(generator() & 0xFFu);
+        result.push_back(kDigits[value >> 4]);
+        result.push_back(kDigits[value & 0x0F]);
+    }
+    return result;
+}
+
+// 代号用的盐：--id-salt / THU_ID_SALT > 已有的 .id-salt > 自动生成一个并写到当前目录。
+// 盐只留在本地，别人拿到文件名的代号也推不出学号。
+std::string resolveIdSalt(const std::string &explicitSalt, std::filesystem::path *createdAt) {
+    if (!explicitSalt.empty()) return explicitSalt;
+
+    std::vector<std::filesystem::path> candidates{std::filesystem::path(".id-salt")};
+    std::filesystem::path exeDir = exeDirectory();
+    if (!exeDir.empty()) {
+        candidates.push_back(exeDir / ".id-salt");
+        candidates.push_back(exeDir / ".." / ".id-salt");
+        candidates.push_back(exeDir / ".." / ".." / ".id-salt");
+    }
+    for (const std::filesystem::path &path : candidates) {
+        std::string text;
+        if (util::readFile(path.string(), text)) {
+            std::string salt = util::trim(text);
+            if (!salt.empty()) return salt;
+        }
+    }
+
+    std::string salt = randomHex(16);
+    std::filesystem::path target(".id-salt");
+    if (util::writeFile(target.string(), salt + "\r\n") && createdAt != nullptr) {
+        *createdAt = std::filesystem::absolute(target);
+    }
+    return salt;
+}
+
+std::string outputPathFor(const Args &args, const std::string &userId, const std::string &idSalt) {
     if (!args.output.empty()) return args.output;
     std::string dir = args.outDir.empty() ? "res" : args.outDir;
-    return (std::filesystem::path(dir) / (userId + ".ics")).string();
+    if (userId.empty()) return (std::filesystem::path(dir) / "coursesAuto.ics").string();
+    return (std::filesystem::path(dir) / (thu::deriveIdCode(idSalt, userId) + ".ics")).string();
 }
 
 // 本次要处理的账号：.env / 命令行里的单账号在前，--accounts 列表在后，按学号去重。
@@ -247,13 +301,15 @@ int runOffline(const Args &args) {
     }
 
     std::vector<schedule::Course> courses = schedule::mergeCourses(std::move(primary.courses), secondary.courses);
-    std::string output = args.output;
-    if (output.empty()) {
-        std::string outDir = args.outDir.empty() ? "res" : args.outDir;
-        output = args.userId.empty() ? (std::filesystem::path(outDir) / "coursesAuto.ics").string()
-                                     : (std::filesystem::path(outDir) / (args.userId + ".ics")).string();
+    std::string idSalt;
+    if (args.output.empty() && !args.userId.empty()) {
+        std::filesystem::path created;
+        idSalt = resolveIdSalt(args.idSalt, &created);
+        if (!created.empty()) {
+            std::printf("🔑 已生成本地代号盐：%s（请勿公开或删除，删除后代号会变）\n", created.string().c_str());
+        }
     }
-    buildAndWrite(courses, semester, args.calName, output, args.verbose);
+    buildAndWrite(courses, semester, args.calName, outputPathFor(args, args.userId, idSalt), args.verbose);
     return 0;
 }
 
@@ -272,6 +328,22 @@ int runOnline(const Args &args) {
     size_t failed = 0;
     size_t index = 0;
 
+    // 代号盐只在真正要算文件名时才解析 / 生成。
+    std::string idSalt;
+    bool saltReady = false;
+    auto ensureSalt = [&]() -> const std::string & {
+        if (!saltReady) {
+            std::filesystem::path created;
+            idSalt = resolveIdSalt(args.idSalt, &created);
+            saltReady = true;
+            if (!created.empty()) {
+                std::printf("🔑 已生成本地代号盐：%s（请勿公开或删除，删除后代号会变）\n",
+                            created.string().c_str());
+            }
+        }
+        return idSalt;
+    };
+
     for (const thu::Account &account : accounts) {
         ++index;
         if (batch) {
@@ -280,6 +352,11 @@ int runOnline(const Args &args) {
         try {
             for (char c : account.userId) {
                 if (c < '0' || c > '9') throw std::runtime_error("学号应为纯数字。");
+            }
+
+            if (args.output.empty()) {
+                std::printf("🆔 学号 %s → 代号 %s（文件名）\n", account.userId.c_str(),
+                            thu::deriveIdCode(ensureSalt(), account.userId).c_str());
             }
 
             // 每个学号用各自的设备指纹，避免多账号共用同一台“设备”。
@@ -340,7 +417,8 @@ int runOnline(const Args &args) {
 
             std::vector<schedule::Course> courses =
                 schedule::mergeCourses(std::move(primary.courses), secondary.courses);
-            buildAndWrite(courses, semester, args.calName, outputPathFor(args, account.userId), args.verbose);
+            buildAndWrite(courses, semester, args.calName, outputPathFor(args, account.userId, ensureSalt()),
+                          args.verbose);
         } catch (const std::exception &e) {
             ++failed;
             std::fprintf(stderr, "❌ 学号 %s 生成失败：%s\n", account.userId.c_str(), e.what());
@@ -400,6 +478,7 @@ int main() {
             else if (arg == "--output") args.output = next("--output");
             else if (arg == "--outdir") args.outDir = next("--outdir");
             else if (arg == "--accounts") args.accountsFile = next("--accounts");
+            else if (arg == "--id-salt") args.idSalt = next("--id-salt");
             else if (arg == "--calname") args.calName = next("--calname");
             else if (arg == "--proxy") {
                 args.proxy = next("--proxy");
@@ -447,6 +526,7 @@ int main() {
         if (args.output.empty()) args.output = envValue(dotenv, "THU_OUTPUT");
         if (args.outDir.empty()) args.outDir = envValue(dotenv, "THU_OUTDIR");
         if (args.accountsFile.empty()) args.accountsFile = envValue(dotenv, "THU_ACCOUNTS");
+        if (args.idSalt.empty()) args.idSalt = envValue(dotenv, "THU_ID_SALT");
         if (args.calName.empty()) args.calName = envValue(dotenv, "THU_CALNAME");
         if (args.proxy.empty() && !args.proxyDirect) {
             args.proxy = envValue(dotenv, "HTTPS_PROXY");

@@ -141,6 +141,27 @@ void testAccountsParsing() {
     check(problems.size() == 3, "3 problems reported");
 }
 
+void testIdCode() {
+    std::printf("id code:\n");
+    const std::string salt = "0123456789abcdef0123456789abcdef";
+    std::string a = thu::deriveIdCode(salt, "2026010585");
+    std::string b = thu::deriveIdCode(salt, "2026010585");
+    std::string c = thu::deriveIdCode(salt, "2026010586");
+    std::string other = thu::deriveIdCode("ffffffffffffffffffffffffffffffff", "2026010585");
+
+    checkEqual(a, b, "same salt and id give the same code");
+    check(a != c, "different ids give different codes");
+    check(a != other, "different salts give different codes");
+    check(a.size() == 16, "code is 16 chars long");
+    bool hexOnly = !a.empty();
+    for (char ch : a) {
+        if (!((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f'))) hexOnly = false;
+    }
+    check(hexOnly, "code is lowercase hex");
+    check(a.find("2026010585") == std::string::npos, "code does not contain the student id");
+    check(thu::deriveIdCode(salt, "").size() == 16, "empty id still yields a code");
+}
+
 void testScheduleParsing() {
     std::printf("schedule parsing:\n");
     const std::string calendarRaw =
@@ -250,6 +271,7 @@ bool run(std::string &report) {
     testLoginPageParsing();
     testTotpWindow();
     testAccountsParsing();
+    testIdCode();
     testScheduleParsing();
     testIcs();
     if (gFailures == 0) {

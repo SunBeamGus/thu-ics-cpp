@@ -96,4 +96,9 @@ TrustDevice parseTrustDevice(const std::string &text);
 // `step` is the TOTP period in seconds (30 by default).
 long long totpWindowEndsAt(long long nowSeconds, int step = 30);
 
+// 由学号派生出的公开代号（文件名用它，避免把学号写进 URL）。
+// 同一个 salt + 学号永远得到同一个 16 位十六进制代号；换 salt 会得到不同的代号，
+// 因此 salt 要保存在本地、不要公开，别人就拿不到学号 ↔ 代号的对应关系。
+std::string deriveIdCode(const std::string &salt, const std::string &userId);
+
 } // namespace thu

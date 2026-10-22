@@ -2,6 +2,7 @@
 
 #include "json.h"
 #include "sm2.h"
+#include "sm3.h"
 #include "util.h"
 
 #include <algorithm>
@@ -165,6 +166,11 @@ TrustDevice parseTrustDevice(const std::string &text) {
 long long totpWindowEndsAt(long long nowSeconds, int step) {
     long long period = step > 0 ? step : 30;
     return (nowSeconds / period + 1) * period;
+}
+
+std::string deriveIdCode(const std::string &salt, const std::string &userId) {
+    // 用 \x1f 分隔，避免 (salt, id) 拼接产生歧义。
+    return crypto::sm3Hex(salt + "\x1f" + userId).substr(0, 16);
 }
 
 std::vector<Account> parseAccounts(const std::string &text, std::vector<std::string> *problems) {
