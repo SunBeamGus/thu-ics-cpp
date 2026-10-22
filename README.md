@@ -1,12 +1,13 @@
 # thu-courses-ics（C++ 版）
 
 自动登录清华大学信息门户 / 教学门户，读取本学期（或指定下学期）的课表，
-生成可供日历 App 订阅的 iCalendar 文件，默认输出到本仓库的：
+生成可供日历 App 订阅的 iCalendar 文件。每次按学号写一个文件，默认输出到：
 
 ```
-res/coursesAuto.ics
+res/<学号>.ics
 ```
 
+既支持单人使用，也支持多学生批量生成（见[多学生 / 批量生成](#多学生--批量生成)）。
 本仓库是独立项目，只负责「登录 → 读取课表 → 生成 .ics」。发布到 GitHub Pages
 之类的静态站点仓库需要额外一步复制文件，见[发布到网站](#发布到网站)。
 
@@ -50,7 +51,7 @@ res/coursesAuto.ics
    - **留空或 `n`**：不导出。
 6. 复制完会自动在站点仓库里 `git add` → `git commit` → `git push`，成功后打印提交号。
 7. 结束时窗口停在 `Press any key to continue . . .`，按任意键关闭；
-   本地文件在 `res\coursesAuto.ics`。
+   本地文件在 `res\<学号>.ics`。
 
 > 想改已记住的目标：编辑 `.env` 里的 `THU_PUBLISH_DIR`，或临时用
 > `-Publish <目录>` 覆盖；命令行加 `-NoPush` 则只复制不提交。
@@ -98,7 +99,8 @@ powershell -ExecutionPolicy Bypass -File .\build.ps1
 ```
 
 测试覆盖 SM2 标准向量与加解密、SM3、JSON、日期换算、学期与课表解析、
-ICS 生成与折行，以及两步验证的设备信任选项解析和 TOTP 有效期窗口计算。
+ICS 生成与折行、两步验证的设备信任选项解析、TOTP 有效期窗口计算，以及批量
+账号列表解析。
 
 ## 配置凭据
 
@@ -116,14 +118,18 @@ notepad .\.env
 
 | 变量 | 必填 | 说明 |
 | --- | --- | --- |
-| `THU_USER_ID` | 是 | 学号 |
-| `THU_PASSWORD` | 是 | 信息门户密码 |
+| `THU_USER_ID` | 是* | 学号（单个学生） |
+| `THU_PASSWORD` | 是* | 信息门户密码 |
+| `THU_ACCOUNTS` | 否 | 账号列表文件路径，用于批量生成（见[多学生 / 批量生成](#多学生--批量生成)） |
 | `THU_SEMESTER_INDEX` | 否 | 抓取下学期：`nextSemesterList` 下标，0 起；留空为当前学期 |
-| `THU_OUTPUT` | 否 | 输出路径，默认 `res/coursesAuto.ics` |
+| `THU_OUTDIR` | 否 | 输出目录，默认 `res`；文件名为 `<学号>.ics` |
+| `THU_OUTPUT` | 否 | 强制指定单个输出文件（仅单账号，留空则用 `<outdir>/<学号>.ics`） |
 | `THU_CALNAME` | 否 | 日历名称 |
-| `THU_FINGERPRINT` | 否 | 设备指纹；默认按“学号 + 计算机名”生成并保持稳定 |
+| `THU_FINGERPRINT` | 否 | 设备指纹；默认按“学号 + 计算机名”生成并保持稳定（批量模式忽略） |
 | `THU_TRUST_DEVICE` | 否 | 两步验证时是否在清华 ID 内信任本设备：留空=登录时询问一次；`1`=总是信任；`0`=从不信任 |
 | `HTTPS_PROXY` | 否 | HTTP 代理，如 `http://127.0.0.1:15236`；默认直连 |
+
+\* `THU_USER_ID` / `THU_PASSWORD` 与 `THU_ACCOUNTS` 至少要提供一种。
 
 也可以使用同名命令行参数覆盖（见 `--help`）。**密码建议只写在 `.env`**，
 避免出现在命令历史中。
@@ -150,7 +156,7 @@ notepad .\.env
 
 ## 生成
 
-在仓库根目录执行（这样默认输出正好是 `res/coursesAuto.ics`）：
+在仓库根目录执行（默认输出 `res\<学号>.ics`）：
 
 ```powershell
 .\build\thu-courses-ics.exe
@@ -171,10 +177,51 @@ powershell -ExecutionPolicy Bypass -File .\run.ps1
 🔐 正在登录清华大学信息门户（2022xxxxxx）…
 📚 正在读取学期信息…
 📅 正在读取课表：2026-2027学年秋季学期…
-✅ 已生成 C:\...\thu-ics-cpp\res\coursesAuto.ics
+✅ 已生成 C:\...\thu-ics-cpp\res\2022xxxxxx.ics
    学期：2026-2027学年秋季学期（第 1 周周一 = 2026-09-14，共 17 周）
    课程：23 门，事件：412 个
 ```
+
+文件名固定是学号，可以用 `--outdir <目录>` 换输出目录，或用 `--output <文件>`
+强行指定单个文件（仅单账号可用）。
+
+## 多学生 / 批量生成
+
+把多个学生的账号写进一个列表文件（建议叫 `accounts.txt`，放在仓库根目录，
+已被 `.gitignore` 忽略）：
+
+```text
+# 每行「学号,密码」；分隔符可以用 , ; : = | / 或空格
+2026010585,我的密码
+2026010586=另一个密码
+# 密码里带 # 或 , 也没问题，只按学号后的第一个分隔符切开
+2026010587; p@ss,word
+```
+
+然后：
+
+```powershell
+# 批量生成到 res\<学号>.ics
+.\build\thu-courses-ics.exe --accounts accounts.txt
+
+# 或写进 .env，之后双击 run.cmd 就会全部生成
+# THU_ACCOUNTS=accounts.txt
+
+# 指定输出目录
+.\build\thu-courses-ics.exe --accounts accounts.txt --outdir res\2026-2027-1
+```
+
+行为说明：
+
+- 单人凭据（`THU_USER_ID` / `THU_PASSWORD`）和 `--accounts` **可以同时给**，
+  单账号排在前面，按学号去重；
+- 每个学号使用**各自的设备指纹**（由学号 + 计算机名生成），不会让多个人共用同一台
+  “可信设备”；批量模式下 `--fingerprint` 被忽略；
+- `--dump-dir` 在批量模式会按学号分子目录：`<dump-dir>\<学号>\`；
+- 某个账号失败（密码错、未开 TOTP 等）**不会中断整批**，其余账号继续生成，
+  最后汇总 `❌ n/m 个账号失败` 并以退出码 1 结束；
+- 多账号时不能用 `--output`（会直接报错），请用 `--outdir`；
+- 每个账号可能各自触发两步验证（除非该设备已被信任），验证码询问是逐个账号进行的。
 
 ### 发布到网站
 
@@ -214,23 +261,27 @@ powershell -ExecutionPolicy Bypass -File .\run.ps1
 
 自动推送的行为细节：
 
-- 只 `git add` 这一个文件，并 `git commit -- res/coursesAuto.ics`，站点仓库里其它
-  已暂存的改动不会被卷进这次提交；
+- 只 `git add` 本次复制的那几个 `<学号>.ics`，并 `git commit -- res/<学号>.ics …`，
+  站点仓库里其它已暂存的改动不会被卷进这次提交；
+- 批量生成时一次复制 / 提交全部文件（有几个学号就是几个）；
 - 内容与上次完全一致时跳过提交，不会产生空提交；
 - 分支没有上游时自动改用 `git push -u origin <当前分支>`；
 - 目标目录不是 git 仓库时只复制、不提交（给出提示）；
 - 推送失败（凭据失效、远程有新提交等）会以退出码 1 结束，文件已提交在本地，
   你可以在站点仓库里手动处理后再 `git push`。
 
-订阅地址为：
+订阅地址为（每个学号一个）：
 
 ```
-https://your-username.github.io/res/coursesAuto.ics
-webcal://your-username.github.io/res/coursesAuto.ics
+https://your-username.github.io/res/<学号>.ics
+webcal://your-username.github.io/res/<学号>.ics
 ```
 
 如果确认新文件正确，可以把站点首页（如 `index.html` / `index.md`）里的订阅链接
-从 `res/courses.ics` 切换到 `res/coursesAuto.ics`。
+从 `res/courses.ics` 切换到 `res/<学号>.ics`。
+
+> ⚠️ 文件名就是学号，发布到公开站点等于公开这个学号。如果站点是公开的、而你不希望
+> 暴露学号，可以改用 `--outdir` 输出到别处，或先把文件重命名成随机名再发布。
 
 ## 可选参数
 
@@ -239,7 +290,8 @@ webcal://your-username.github.io/res/coursesAuto.ics
 
 ```
 --user-id <学号>         --password <密码>
---semester <N>           --output <路径>
+--accounts <文件>        --outdir <目录>
+--output <文件>          --semester <N>
 --calname <名称>         --proxy <host:port>
 --fingerprint <hex>      --dump-dir <目录>
 --trust-device           --no-trust-device
@@ -377,8 +429,10 @@ GB/T 32918 实现；已用 `sm-crypto` 生成的密文做双向交叉验证。
 - **密码错误 / 需要验证**：错误信息会从登录页的 `msg_note` 提取；若显示
   “用户名或密码不正确”，请检查 `.env`。
 - **数据隐私**：生成的 `.ics` 一旦发布就会公开托管，任何拿到 URL 的人都能看到
-  你的课表；本仓库已在 `.gitignore` 中忽略 `res/` 与 `dump/`，如不接受公开，
-  请不要发布到网站仓库。
+  课表；**文件名就是学号**，所以发布后学号也会一并公开。本仓库已在 `.gitignore`
+  中忽略 `res/`、`dump/` 和 `accounts.txt`，如不接受公开，请不要发布到网站仓库。
+- **批量生成的凭据**：`accounts.txt` 里是明文密码，务必只放在本机、不要提交、
+  不要放进共享目录；可以把 `--accounts` 指向仓库外的路径。
 
 ## 目录
 
@@ -389,6 +443,7 @@ thu-ics-cpp/
 ├── .gitignore
 ├── .gitattributes
 ├── .env.example
+├── accounts.txt        # 批量生成的账号列表（本地创建，已忽略）
 ├── run.cmd             # 双击运行入口（纯 ASCII 启动器）
 ├── run.ps1             # 构建检查、.env 引导、运行、复制到站点仓库
 ├── build.ps1           # 只负责 cmake 配置 + 编译

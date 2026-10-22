@@ -11,6 +11,7 @@
 #include <iostream>
 #include <map>
 #include <regex>
+#include <set>
 #include <stdexcept>
 
 namespace thu {
@@ -164,6 +165,50 @@ TrustDevice parseTrustDevice(const std::string &text) {
 long long totpWindowEndsAt(long long nowSeconds, int step) {
     long long period = step > 0 ? step : 30;
     return (nowSeconds / period + 1) * period;
+}
+
+std::vector<Account> parseAccounts(const std::string &text, std::vector<std::string> *problems) {
+    std::vector<Account> accounts;
+    std::set<std::string> seen;
+    size_t lineNumber = 0;
+    size_t pos = 0;
+    while (pos <= text.size()) {
+        size_t eol = text.find('\n', pos);
+        std::string line = text.substr(pos, eol == std::string::npos ? std::string::npos : eol - pos);
+        pos = (eol == std::string::npos) ? text.size() + 1 : eol + 1;
+        ++lineNumber;
+
+        std::string trimmed = util::trim(line);
+        if (trimmed.empty() || trimmed[0] == '#') continue;
+
+        // 学号是行首的一串数字，后面的第一个字符视为分隔符。
+        size_t digits = 0;
+        while (digits < trimmed.size() && trimmed[digits] >= '0' && trimmed[digits] <= '9') ++digits;
+        std::string userId = trimmed.substr(0, digits);
+        std::string rest = trimmed.substr(digits);
+        if (!rest.empty()) {
+            char c = rest[0];
+            if (c == ',' || c == ';' || c == ':' || c == '=' || c == '|' || c == '/' || c == ' ' || c == '\t') {
+                rest.erase(0, 1);
+            }
+        }
+        std::string password = util::trim(rest);
+
+        if (userId.empty()) {
+            if (problems) problems->push_back("第 " + std::to_string(lineNumber) + " 行：学号应以数字开头");
+            continue;
+        }
+        if (password.empty()) {
+            if (problems) problems->push_back("第 " + std::to_string(lineNumber) + " 行：缺少密码（学号 " + userId + "）");
+            continue;
+        }
+        if (!seen.insert(userId).second) {
+            if (problems) problems->push_back("第 " + std::to_string(lineNumber) + " 行：学号 " + userId + " 重复，已忽略");
+            continue;
+        }
+        accounts.push_back(Account{userId, password});
+    }
+    return accounts;
 }
 
 std::string extractSm2PublicKey(const std::string &html) {

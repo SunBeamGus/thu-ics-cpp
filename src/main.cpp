@@ -14,6 +14,7 @@
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -43,6 +44,8 @@ struct Args {
     std::string password;
     std::string semesterIndex;
     std::string output;
+    std::string outDir;
+    std::string accountsFile;
     std::string calName;
     std::string proxy;
     bool proxyDirect = false;
@@ -66,7 +69,9 @@ void printHelp() {
         "  --user-id <学号>        信息门户账号（或环境变量 THU_USER_ID）\n"
         "  --password <密码>       信息门户密码（或环境变量 THU_PASSWORD）\n"
         "  --semester <N>          抓取下学期课表：nextSemesterList 下标（0 起；默认当前学期）\n"
-        "  --output <路径>         输出文件（默认 res/coursesAuto.ics）\n"
+        "  --outdir <目录>         输出目录（默认 res），每个学生写 <学号>.ics\n"
+        "  --output <路径>         直接指定单个输出文件（多账号时不可用）\n"
+        "  --accounts <文件>       批量生成：每行「学号,密码」，# 开头为注释（或 THU_ACCOUNTS）\n"
         "  --calname <名称>        日历名称（默认「清华大学课表（学期名）」）\n"
         "  --proxy <host:port>     使用 HTTP 代理；--proxy system 系统代理；--proxy direct 强制直连\n"
         "  --fingerprint <hex>     设备指纹（默认根据账号与本机名自动生成）\n"
@@ -188,6 +193,39 @@ void buildAndWrite(const std::vector<schedule::Course> &courses, const thu::Seme
     }
 }
 
+// 输出文件名固定为 <outdir>/<学号>.ics；--output 只用于显式指定单个文件。
+std::string outputPathFor(const Args &args, const std::string &userId) {
+    if (!args.output.empty()) return args.output;
+    std::string dir = args.outDir.empty() ? "res" : args.outDir;
+    return (std::filesystem::path(dir) / (userId + ".ics")).string();
+}
+
+// 本次要处理的账号：.env / 命令行里的单账号在前，--accounts 列表在后，按学号去重。
+std::vector<thu::Account> resolveAccounts(const Args &args, std::vector<std::string> &problems) {
+    std::vector<thu::Account> accounts;
+    std::set<std::string> seen;
+    if (!args.userId.empty() && !args.password.empty()) {
+        accounts.push_back(thu::Account{args.userId, args.password});
+        seen.insert(args.userId);
+    } else if (!args.userId.empty() || !args.password.empty()) {
+        throw std::runtime_error("THU_USER_ID 与 THU_PASSWORD 需要同时提供。");
+    }
+    if (!args.accountsFile.empty()) {
+        std::string text;
+        if (!util::readFile(args.accountsFile, text)) {
+            throw std::runtime_error("无法读取账号列表：" + args.accountsFile);
+        }
+        for (const thu::Account &account : thu::parseAccounts(text, &problems)) {
+            if (!seen.insert(account.userId).second) {
+                problems.push_back("学号 " + account.userId + " 重复（已在 .env 或更早的行里出现），已忽略");
+                continue;
+            }
+            accounts.push_back(account);
+        }
+    }
+    return accounts;
+}
+
 int runOffline(const Args &args) {
     std::filesystem::path dir(args.offlineDir);
     std::string calendarRaw;
@@ -209,68 +247,111 @@ int runOffline(const Args &args) {
     }
 
     std::vector<schedule::Course> courses = schedule::mergeCourses(std::move(primary.courses), secondary.courses);
-    buildAndWrite(courses, semester, args.calName, args.output, args.verbose);
+    std::string output = args.output;
+    if (output.empty()) {
+        std::string outDir = args.outDir.empty() ? "res" : args.outDir;
+        output = args.userId.empty() ? (std::filesystem::path(outDir) / "coursesAuto.ics").string()
+                                     : (std::filesystem::path(outDir) / (args.userId + ".ics")).string();
+    }
+    buildAndWrite(courses, semester, args.calName, output, args.verbose);
     return 0;
 }
 
 int runOnline(const Args &args) {
-    if (args.userId.empty() || args.password.empty()) {
-        throw std::runtime_error("缺少登录凭据：请设置 THU_USER_ID / THU_PASSWORD，或写入 .env 文件。");
+    std::vector<std::string> problems;
+    std::vector<thu::Account> accounts = resolveAccounts(args, problems);
+    for (const std::string &problem : problems) std::fprintf(stderr, "  ! %s\n", problem.c_str());
+    if (accounts.empty()) {
+        throw std::runtime_error("缺少登录凭据：请设置 THU_USER_ID / THU_PASSWORD，或用 --accounts 指定账号列表。");
     }
-    for (char c : args.userId) {
-        if (c < '0' || c > '9') throw std::runtime_error("学号应为纯数字。");
+    if (accounts.size() > 1 && !args.output.empty()) {
+        throw std::runtime_error("多账号时不能用 --output 指定单个文件，请改用 --outdir <目录>。");
     }
 
-    thu::Options options;
-    options.userId = args.userId;
-    options.password = args.password;
-    options.proxy = args.proxy;
-    options.verbose = args.verbose;
-    options.trustDevice = args.trustDevice;
-    options.fingerprint = args.fingerprint.empty() ? defaultFingerprint(args.userId) : args.fingerprint;
+    const bool batch = accounts.size() > 1;
+    size_t failed = 0;
+    size_t index = 0;
 
-    thu::Session session(options);
-    std::printf("🔐 正在登录清华大学信息门户…\n");
-    session.login();
-
-    std::printf("📚 正在读取学期信息…\n");
-    std::string calendarRaw = session.fetchCalendarRaw();
-    thu::CalendarData calendar = schedule::parseCalendarJson(calendarRaw);
-    bool isNext = false;
-    thu::Semester semester = chooseSemester(calendar, args.semesterIndex, isNext);
-
-    std::printf("📅 正在读取课表：%s…\n", semester.semesterName.c_str());
-    std::string primaryRaw = session.fetchPrimaryRaw(semester);
-    schedule::ParseResult primary = schedule::parsePrimaryJson(primaryRaw, semester);
-    printWarnings(primary.warnings);
-
-    std::string secondaryHtml;
-    schedule::ParseResult secondary;
-    if (!session.graduate()) {
+    for (const thu::Account &account : accounts) {
+        ++index;
+        if (batch) {
+            std::printf("\n===== [%zu/%zu] 学号 %s =====\n", index, accounts.size(), account.userId.c_str());
+        }
         try {
-            secondaryHtml = session.fetchSecondaryRaw();
-            secondary = schedule::parseSecondaryHtml(secondaryHtml);
-            printWarnings(secondary.warnings);
+            for (char c : account.userId) {
+                if (c < '0' || c > '9') throw std::runtime_error("学号应为纯数字。");
+            }
+
+            // 每个学号用各自的设备指纹，避免多账号共用同一台“设备”。
+            std::string fingerprint = args.fingerprint.empty() || batch ? defaultFingerprint(account.userId)
+                                                                       : args.fingerprint;
+            std::string dumpDir = args.dumpDir;
+            if (!dumpDir.empty() && batch) {
+                dumpDir = (std::filesystem::path(dumpDir) / account.userId).string();
+            }
+
+            thu::Options options;
+            options.userId = account.userId;
+            options.password = account.password;
+            options.proxy = args.proxy;
+            options.verbose = args.verbose;
+            options.trustDevice = args.trustDevice;
+            options.fingerprint = fingerprint;
+
+            thu::Session session(options);
+            std::printf("🔐 正在登录清华大学信息门户（%s）…\n", account.userId.c_str());
+            session.login();
+
+            std::printf("📚 正在读取学期信息…\n");
+            std::string calendarRaw = session.fetchCalendarRaw();
+            thu::CalendarData calendar = schedule::parseCalendarJson(calendarRaw);
+            bool isNext = false;
+            thu::Semester semester = chooseSemester(calendar, args.semesterIndex, isNext);
+
+            std::printf("📅 正在读取课表：%s…\n", semester.semesterName.c_str());
+            std::string primaryRaw = session.fetchPrimaryRaw(semester);
+            schedule::ParseResult primary = schedule::parsePrimaryJson(primaryRaw, semester);
+            printWarnings(primary.warnings);
+
+            std::string secondaryHtml;
+            schedule::ParseResult secondary;
+            if (!session.graduate()) {
+                try {
+                    secondaryHtml = session.fetchSecondaryRaw();
+                    secondary = schedule::parseSecondaryHtml(secondaryHtml);
+                    printWarnings(secondary.warnings);
+                } catch (const std::exception &e) {
+                    std::fprintf(stderr, "  ! 二级课表读取失败，已跳过：%s\n", e.what());
+                }
+            }
+
+            if (!dumpDir.empty()) {
+                std::error_code ec;
+                std::filesystem::create_directories(dumpDir, ec);
+                if (ec) throw std::runtime_error("无法创建导出目录：" + dumpDir);
+                if (!util::writeFile((std::filesystem::path(dumpDir) / "calendar.json").string(), calendarRaw) ||
+                    !util::writeFile((std::filesystem::path(dumpDir) / "primary.json").string(), primaryRaw) ||
+                    (!secondaryHtml.empty() &&
+                     !util::writeFile((std::filesystem::path(dumpDir) / "secondary.html").string(), secondaryHtml))) {
+                    throw std::runtime_error("写入导出目录失败：" + dumpDir);
+                }
+                std::printf("💾 原始数据已保存到 %s\n", dumpDir.c_str());
+            }
+
+            std::vector<schedule::Course> courses =
+                schedule::mergeCourses(std::move(primary.courses), secondary.courses);
+            buildAndWrite(courses, semester, args.calName, outputPathFor(args, account.userId), args.verbose);
         } catch (const std::exception &e) {
-            std::fprintf(stderr, "  ! 二级课表读取失败，已跳过：%s\n", e.what());
+            ++failed;
+            std::fprintf(stderr, "❌ 学号 %s 生成失败：%s\n", account.userId.c_str(), e.what());
         }
     }
 
-    if (!args.dumpDir.empty()) {
-        std::error_code ec;
-        std::filesystem::create_directories(args.dumpDir, ec);
-        if (ec) throw std::runtime_error("无法创建导出目录：" + args.dumpDir);
-        if (!util::writeFile((std::filesystem::path(args.dumpDir) / "calendar.json").string(), calendarRaw) ||
-            !util::writeFile((std::filesystem::path(args.dumpDir) / "primary.json").string(), primaryRaw) ||
-            (!secondaryHtml.empty() &&
-             !util::writeFile((std::filesystem::path(args.dumpDir) / "secondary.html").string(), secondaryHtml))) {
-            throw std::runtime_error("写入导出目录失败：" + args.dumpDir);
-        }
-        std::printf("💾 原始数据已保存到 %s\n", args.dumpDir.c_str());
+    if (failed > 0) {
+        std::fprintf(stderr, "❌ %zu/%zu 个账号失败。\n", failed, accounts.size());
+        return 1;
     }
-
-    std::vector<schedule::Course> courses = schedule::mergeCourses(std::move(primary.courses), secondary.courses);
-    buildAndWrite(courses, semester, args.calName, args.output, args.verbose);
+    if (batch) std::printf("\n✅ 全部 %zu 个账号已完成。\n", accounts.size());
     return 0;
 }
 
@@ -317,6 +398,8 @@ int main() {
             }
             else if (arg == "--semester") args.semesterIndex = next("--semester");
             else if (arg == "--output") args.output = next("--output");
+            else if (arg == "--outdir") args.outDir = next("--outdir");
+            else if (arg == "--accounts") args.accountsFile = next("--accounts");
             else if (arg == "--calname") args.calName = next("--calname");
             else if (arg == "--proxy") {
                 args.proxy = next("--proxy");
@@ -362,6 +445,8 @@ int main() {
         if (args.password.empty()) args.password = envValue(dotenv, "THU_PASSWORD");
         if (args.semesterIndex.empty()) args.semesterIndex = envValue(dotenv, "THU_SEMESTER_INDEX");
         if (args.output.empty()) args.output = envValue(dotenv, "THU_OUTPUT");
+        if (args.outDir.empty()) args.outDir = envValue(dotenv, "THU_OUTDIR");
+        if (args.accountsFile.empty()) args.accountsFile = envValue(dotenv, "THU_ACCOUNTS");
         if (args.calName.empty()) args.calName = envValue(dotenv, "THU_CALNAME");
         if (args.proxy.empty() && !args.proxyDirect) {
             args.proxy = envValue(dotenv, "HTTPS_PROXY");
@@ -378,7 +463,7 @@ int main() {
         }
         if (args.dumpDir.empty()) args.dumpDir = envValue(dotenv, "THU_DUMP_DIR");
         if (args.offlineDir.empty()) args.offlineDir = envValue(dotenv, "THU_OFFLINE");
-        if (args.output.empty()) args.output = "res/coursesAuto.ics";
+        // 输出路径不再有全局默认值：在线模式按 <outdir>/<学号>.ics 逐个计算。
 
         if (!args.offlineDir.empty()) return runOffline(args);
         return runOnline(args);

@@ -116,6 +116,31 @@ void testTotpWindow() {
     check(thu::totpWindowEndsAt(60, 0) == 90, "invalid step falls back to 30");
 }
 
+void testAccountsParsing() {
+    std::printf("accounts parsing:\n");
+    std::vector<std::string> problems;
+    const std::string text =
+        "# 注释行\n"
+        "\n"
+        "2026010585,secret\n"
+        "2026010586=Secret=1\n"
+        "2026010587: p@ss,word \r\n"
+        "2026010588;  spaced pw  \n"
+        "abc,nope\n"
+        "2026010589\n"
+        "2026010585,duplicate\n";
+    std::vector<thu::Account> accounts = thu::parseAccounts(text, &problems);
+    check(accounts.size() == 4, "parsed 4 accounts");
+    if (accounts.size() == 4) {
+        checkEqual(accounts[0].userId, "2026010585", "account 1 id");
+        checkEqual(accounts[0].password, "secret", "account 1 password");
+        checkEqual(accounts[1].password, "Secret=1", "password keeps =");
+        checkEqual(accounts[2].password, "p@ss,word", "password keeps comma");
+        checkEqual(accounts[3].password, "spaced pw", "password is trimmed");
+    }
+    check(problems.size() == 3, "3 problems reported");
+}
+
 void testScheduleParsing() {
     std::printf("schedule parsing:\n");
     const std::string calendarRaw =
@@ -224,6 +249,7 @@ bool run(std::string &report) {
     testDates();
     testLoginPageParsing();
     testTotpWindow();
+    testAccountsParsing();
     testScheduleParsing();
     testIcs();
     if (gFailures == 0) {

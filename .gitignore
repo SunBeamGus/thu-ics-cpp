@@ -48,6 +48,11 @@ CMakeScripts/
 .env.*.local
 !.env.example
 
+# 批量生成的账号列表（明文密码，绝不能提交）
+/accounts.txt
+/accounts*.txt
+/students.txt
+
 # ---------- 个人数据：抓取的原始接口数据与生成的课表 ----------
 /dump/
 /res/

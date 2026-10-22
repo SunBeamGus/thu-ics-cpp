@@ -40,7 +40,6 @@ $RepoRoot = $PSScriptRoot
 $EnvFile = Join-Path $RepoRoot ".env"
 $EnvExample = Join-Path $RepoRoot ".env.example"
 $PublishKey = "THU_PUBLISH_DIR"
-$SiteRel = "res/coursesAuto.ics"
 
 # 单配置生成器把 exe 放在 build\，多配置生成器（Visual Studio）放在 build\Release\。
 # 两种都找，并优先用最新的那个。
@@ -298,16 +297,28 @@ if ($Publish -and $TargetSource -eq "default") {
     }
 }
 
-# 4) 计算输出路径，供复制使用。
-$OutFile = Join-Path $RepoRoot $SiteRel
-for ($i = 0; $i -lt $Rest.Count - 1; $i++) {
-    if ($Rest[$i] -eq "--output") { $OutFile = $Rest[$i + 1] }
-}
-if (-not [System.IO.Path]::IsPathRooted($OutFile)) {
-    $OutFile = [System.IO.Path]::GetFullPath((Join-Path $RepoRoot $OutFile))
+# 4) 先记下输出位置相关的参数；真正的文件列表要等程序跑完再扫描
+#（生成的文件名是 <学号>.ics，事先不知道会有几个）。
+function Get-RunArgValue {
+    param([string] $Name)
+    for ($i = 0; $i -lt $Rest.Count - 1; $i++) {
+        if ($Rest[$i] -eq $Name) { return $Rest[$i + 1] }
+    }
+    return $null
 }
 
+function Resolve-RepoPath {
+    param([string] $Path)
+    if ([System.IO.Path]::IsPathRooted($Path)) { return $Path }
+    return [System.IO.Path]::GetFullPath((Join-Path $RepoRoot $Path))
+}
+
+$explicitOutput = Get-RunArgValue '--output'
+$outDirArg = Get-RunArgValue '--outdir'
+$outDir = if ($outDirArg) { Resolve-RepoPath $outDirArg } else { Join-Path $RepoRoot 'res' }
+
 # 5) 运行。
+$runStarted = Get-Date
 Push-Location $RepoRoot
 try {
     & $Exe @Rest
@@ -322,29 +333,60 @@ if ($code -ne 0) { exit $code }
 # --self-test / --help 不生成文件，后面的“已生成/已复制”提示就不适用了。
 if ($SelfTestOrHelp) { exit $code }
 
+# 现在扫描输出目录，只收本次刚写过的 .ics（单人 1 个，批量 N 个）。
+# 用时间过滤可以避免把 res\ 里以前留下的旧文件（例如改名前的 coursesAuto.ics）
+# 一起发布出去。
+$OutFiles = @()
+if ($explicitOutput) {
+    $explicitPath = Resolve-RepoPath $explicitOutput
+    if (Test-Path -LiteralPath $explicitPath) { $OutFiles = @($explicitPath) }
+}
+elseif (Test-Path -LiteralPath $outDir) {
+    $OutFiles = @(Get-ChildItem -LiteralPath $outDir -Filter '*.ics' -File |
+                  Where-Object { $_.LastWriteTime -ge $runStarted.AddSeconds(-2) } |
+                  Sort-Object Name |
+                  ForEach-Object { $_.FullName })
+}
+
 # 6) 复制到站点仓库，并自动提交 + 推送。
 if (-not $Publish) {
     Write-Host ""
-    Write-Host "已生成 $OutFile（未复制到站点仓库）。" -ForegroundColor Green
+    if ($OutFiles.Count -gt 0) {
+        Write-Host ("已生成 {0} 个课表文件（未复制到站点仓库）：" -f $OutFiles.Count) -ForegroundColor Green
+        foreach ($file in $OutFiles) { Write-Host "  $file" }
+    }
+    else {
+        Write-Host "已生成课表（未复制到站点仓库）。" -ForegroundColor Green
+    }
     exit 0
 }
 
-if (-not (Test-Path -LiteralPath $OutFile)) {
-    Write-Host "未找到输出文件，无法复制：$OutFile" -ForegroundColor Red
+if ($OutFiles.Count -eq 0) {
+    Write-Host "没有找到生成的 .ics 文件，无法复制。" -ForegroundColor Red
     Write-Host "（注意 --self-test 只跑测试、不生成文件。）" -ForegroundColor Yellow
     exit 1
 }
 
-$Target = Join-Path $Publish "res\coursesAuto.ics"
+$siteRes = Join-Path $Publish "res"
+if (-not (Test-Path -LiteralPath $siteRes)) {
+    Write-Host "站点仓库里没有 res 目录：$siteRes" -ForegroundColor Red
+    exit 1
+}
+
+$RelPaths = @()
 try {
-    Copy-Item -LiteralPath $OutFile -Destination $Target -Force
+    foreach ($file in $OutFiles) {
+        $name = Split-Path -Leaf $file
+        Copy-Item -LiteralPath $file -Destination (Join-Path $siteRes $name) -Force
+        $RelPaths += "res/$name"
+        Write-Host "已复制 $name" -ForegroundColor Green
+    }
 }
 catch {
     Write-Host "复制失败：$($_.Exception.Message)" -ForegroundColor Red
     exit 1
 }
 Write-Host ""
-Write-Host "已复制到 $Target" -ForegroundColor Green
 
 if ($NoPush) {
     Write-Host "已按 -NoPush 跳过提交与推送。" -ForegroundColor Yellow
@@ -356,20 +398,20 @@ if (-not (Test-Path -LiteralPath (Join-Path $Publish ".git"))) {
     exit 0
 }
 
-# 只处理这一个文件，避免把站点仓库里其它暂存内容一起提交。
-& git -C $Publish add -- $SiteRel
+# 只处理刚复制的这些文件，避免把站点仓库里其它暂存内容一起提交。
+& git -C $Publish add -- @RelPaths
 if ($LASTEXITCODE -ne 0) {
     Write-Host "git add 失败（退出码 $LASTEXITCODE）。" -ForegroundColor Red
     exit 1
 }
 
-& git -C $Publish diff --cached --quiet -- $SiteRel
+& git -C $Publish diff --cached --quiet -- @RelPaths
 if ($LASTEXITCODE -eq 0) {
     Write-Host "文件内容没有变化，跳过提交与推送。" -ForegroundColor Yellow
     exit 0
 }
 
-& git -C $Publish commit -m "chore: update res/coursesAuto.ics" -- $SiteRel
+& git -C $Publish commit -m "chore: update ics files" -- @RelPaths
 if ($LASTEXITCODE -ne 0) {
     Write-Host "git commit 失败（退出码 $LASTEXITCODE）。" -ForegroundColor Red
     exit 1

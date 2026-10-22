@@ -20,6 +20,16 @@ struct CalendarData {
     std::vector<Semester> next;
 };
 
+struct Account {
+    std::string userId;
+    std::string password;
+};
+
+// 解析账号列表文本，用于批量生成：# 开头与空行忽略；每行 "学号<分隔>密码"，
+// 分隔符可以是 , ; : = | / 或空白，密码里可以继续包含这些字符（只按第一个分开）。
+// 无法解析或重复的行会追加到 problems（可为 nullptr），不会中断解析。
+std::vector<Account> parseAccounts(const std::string &text, std::vector<std::string> *problems);
+
 // 是否在清华 ID 内信任本设备。信任后本机后续登录通常可跳过两步验证；
 // Ask 表示等真正触发两步验证时再询问用户。
 enum class TrustDevice { Ask, No, Yes };
