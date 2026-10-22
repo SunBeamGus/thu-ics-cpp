@@ -3,7 +3,7 @@
 #
 # Usage:
 #   powershell -ExecutionPolicy Bypass -File .\run.ps1 [options...]
-#   powershell -ExecutionPolicy Bypass -File .\run.ps1 -Publish ..\sunbeamgus.github.io
+#   powershell -ExecutionPolicy Bypass -File .\run.ps1 -Publish ..\your-username.github.io
 #
 # -Publish <dir>  run normally, then copy the generated .ics to
 #                 <dir>\res\coursesAuto.ics (the GitHub Pages repository).

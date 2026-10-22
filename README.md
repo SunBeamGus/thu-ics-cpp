@@ -7,8 +7,8 @@
 res/coursesAuto.ics
 ```
 
-本仓库是独立项目，只负责「登录 → 读取课表 → 生成 .ics」。发布到
-`sunbeamgus.github.io` 需要额外一步复制文件，见[发布到网站](#发布到网站)。
+本仓库是独立项目，只负责「登录 → 读取课表 → 生成 .ics」。发布到 GitHub Pages
+之类的静态站点仓库需要额外一步复制文件，见[发布到网站](#发布到网站)。
 
 实现参考了 [`thu-info-community/thu-info-lib`](https://github.com/thu-info-community/thu-info-lib)
 与 [`thu-info-community/thu-info-app`](https://github.com/thu-info-community/thu-info-app)
@@ -128,17 +128,17 @@ powershell -ExecutionPolicy Bypass -File .\run.ps1
 ### 发布到网站
 
 `res/` 被本仓库的 `.gitignore` 忽略（课表属于个人数据，不适合放在公开的代码仓库
-历史里）。发布时把生成的文件交给网站仓库：
+历史里）。发布时把生成的文件交给你的静态站点仓库（下例假设它与本仓库同级）：
 
 ```powershell
-# 一步完成：生成 + 复制到网站仓库的 res/coursesAuto.ics
-powershell -ExecutionPolicy Bypass -File .\run.ps1 -Publish ..\sunbeamgus.github.io
+# 一步完成：生成 + 复制到站点仓库的 res/coursesAuto.ics
+powershell -ExecutionPolicy Bypass -File .\run.ps1 -Publish ..\your-username.github.io
 ```
 
-然后在网站仓库里提交：
+然后在站点仓库里提交：
 
 ```powershell
-cd ..\sunbeamgus.github.io
+cd ..\your-username.github.io
 git add res/coursesAuto.ics
 git commit -m "chore: update res/coursesAuto.ics"
 git push
@@ -147,12 +147,12 @@ git push
 订阅地址为：
 
 ```
-https://sunbeamgus.github.io/res/coursesAuto.ics
-webcal://sunbeamgus.github.io/res/coursesAuto.ics
+https://your-username.github.io/res/coursesAuto.ics
+webcal://your-username.github.io/res/coursesAuto.ics
 ```
 
-如果确认新文件正确，可以把 `index.html` / `index.md` 里的订阅链接从
-`res/courses.ics` 切换到 `res/coursesAuto.ics`。
+如果确认新文件正确，可以把站点首页（如 `index.html` / `index.md`）里的订阅链接
+从 `res/courses.ics` 切换到 `res/coursesAuto.ics`。
 
 ## 可选参数
 
@@ -192,7 +192,7 @@ secondary.html   # 本科二级课表页面
 `run.ps1` 会先切换到仓库根目录，因此可以直接交给任务计划程序：
 
 ```powershell
-schtasks /Create /SC DAILY /TN "THU Courses ICS" /ST 06:00 /TR "powershell -ExecutionPolicy Bypass -File C:\path\to\thu-ics-cpp\run.ps1 -Publish C:\path\to\sunbeamgus.github.io"
+schtasks /Create /SC DAILY /TN "THU Courses ICS" /ST 06:00 /TR "powershell -ExecutionPolicy Bypass -File C:\path\to\thu-ics-cpp\run.ps1 -Publish C:\path\to\your-username.github.io"
 ```
 
 删除任务：
