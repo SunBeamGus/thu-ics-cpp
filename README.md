@@ -28,6 +28,26 @@ res/coursesAuto.ics
   情况下重新生成 ICS，便于排查问题。
 - **标准 iCalendar**：UTC 时间、UTF-8、75 字节折行、稳定的 UID，兼容
   Google Calendar / Apple Calendar / Outlook。
+- **双击即用**：仓库根目录的 `run.cmd` 双击运行，首次会自动编译、缺 `.env`
+  时会打开记事本让你填写，跑完窗口不会自动关闭。
+
+## 快速开始（双击运行）
+
+1. 安装 [CMake](https://cmake.org/download/) ≥ 3.20 与
+   [MinGW-w64](https://winlibs.com/)（或 MSVC），确保 `cmake` / `g++` 在 `PATH` 里。
+2. 双击仓库根目录的 `run.cmd`。
+3. 首次运行会：
+   - 从 `.env.example` 生成 `.env` 并打开记事本，填好学号与密码后保存、回到窗口按回车；
+   - 自动 `cmake` 编译出 `build\thu-courses-ics.exe`。
+4. 登录时如果账号开了两步验证，按提示在窗口里输入 6 位 TOTP 验证码。
+5. 生成结束后窗口会停在 `Press any key to continue . . .`，按任意键关闭。
+   文件在 `res\coursesAuto.ics`。
+
+如果同级目录存在 `<名字>.github.io` 站点仓库（且含 `res\` 子目录），脚本会问一句
+「生成后是否同时复制到 …」，回车默认不复制。
+
+> 只想在命令行里跑（不弹交互、适合任务计划）：用
+> `powershell -ExecutionPolicy Bypass -File .\run.ps1 -NonInteractive`。
 
 ## 构建
 
@@ -108,11 +128,14 @@ notepad .\.env
 .\build\thu-courses-ics.exe
 ```
 
-或使用包装脚本（会自动切换工作目录、首次运行时构建）：
+或使用包装脚本（会自动切换工作目录、首次运行时构建、缺 `.env` 时引导填写）：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\run.ps1
 ```
+
+最省事的是**直接双击 `run.cmd`**，效果同上，且结束后窗口会停住方便看输出
+（见[快速开始](#快速开始双击运行)）。
 
 示例输出：
 
@@ -134,6 +157,9 @@ powershell -ExecutionPolicy Bypass -File .\run.ps1
 # 一步完成：生成 + 复制到站点仓库的 res/coursesAuto.ics
 powershell -ExecutionPolicy Bypass -File .\run.ps1 -Publish ..\your-username.github.io
 ```
+
+双击 `run.cmd` 时不必手写这条命令：只要同级目录里存在 `<名字>.github.io` 且其中
+有 `res\` 子目录，脚本会自动问「生成后是否同时复制到 …」，回答 `y` 即可。
 
 然后在站点仓库里提交：
 
@@ -192,8 +218,10 @@ secondary.html   # 本科二级课表页面
 `run.ps1` 会先切换到仓库根目录，因此可以直接交给任务计划程序：
 
 ```powershell
-schtasks /Create /SC DAILY /TN "THU Courses ICS" /ST 06:00 /TR "powershell -ExecutionPolicy Bypass -File C:\path\to\thu-ics-cpp\run.ps1 -Publish C:\path\to\your-username.github.io"
+schtasks /Create /SC DAILY /TN "THU Courses ICS" /ST 06:00 /TR "powershell -ExecutionPolicy Bypass -File C:\path\to\thu-ics-cpp\run.ps1 -NonInteractive -Publish C:\path\to\your-username.github.io"
 ```
+
+`-NonInteractive` 关闭所有提示（无控制台输入时脚本本来也会自动跳过询问）。
 
 删除任务：
 
@@ -284,9 +312,11 @@ thu-ics-cpp/
 ├── CMakeLists.txt
 ├── README.md
 ├── .gitignore
+├── .gitattributes
 ├── .env.example
-├── build.ps1
-├── run.ps1
+├── run.cmd             # 双击运行入口（纯 ASCII 启动器）
+├── run.ps1             # 构建检查、.env 引导、运行、复制到站点仓库
+├── build.ps1           # 只负责 cmake 配置 + 编译
 ├── src/
 │   ├── main.cpp        # CLI、配置、流程编排
 │   ├── thu.cpp/.h      # 登录、2FA、WebVPN 漫游、原始接口

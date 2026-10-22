@@ -1,0 +1,4 @@
+# .cmd / .bat 在个别情况下会被 cmd.exe 按 LF-only 误解析（尤其涉及标签与多行
+# 结构），因此这两类文件在检出时统一为 CRLF；其余文件保持 LF。
+*.cmd text eol=crlf
+*.bat text eol=crlf
