@@ -1,24 +1,77 @@
-# 构建产物
-build/
-out/
+# ---------------------------------------------------------------------------
+# thu-courses-ics (.gitignore)
+#
+# 只提交源码、脚本与文档；构建产物、个人凭据、抓取到的课表数据都不入库。
+# 检查规则是否误伤已跟踪文件：git ls-files -i -c --exclude-standard
+# ---------------------------------------------------------------------------
+
+# ---------- 构建目录（CMake / 各种生成器） ----------
+/build/
+/out/
+/cmake-build-*/
 cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+CMakeUserPresets.json
+cmake_install.cmake
+CTestTestfile.cmake
+Testing/
+build.ninja
+.ninja_deps
+.ninja_log
+compile_commands.json
+Makefile
+*.make
+CMakeScripts/
+
+# ---------- 编译产物与中间文件（MinGW / MSVC） ----------
 *.exe
-*.obj
-*.o
+*.dll
+*.lib
 *.a
+*.o
+*.obj
+*.pdb
+*.ilk
+*.exp
+*.idb
+*.res
+*.gch
+*.pch
+*.d
+*.obj.d
+*.stackdump
 
-# 本地凭据（只提交 .env.example 模板）
+# ---------- 本地凭据（.env.example 是模板，必须提交） ----------
 .env
+.env.local
+.env.*.local
+!.env.example
 
-# 抓取的原始接口数据（含个人真实课表）
-dump/
+# ---------- 个人数据：抓取的原始接口数据与生成的课表 ----------
+/dump/
+/res/
+*.ics
 
-# 生成的课表文件（默认输出目录）
-res/
-
-# 编辑器 / 系统
+# ---------- 编辑器 / IDE ----------
 .vs/
 .vscode/
+.idea/
 *.user
+*.suo
+*.sln.docstates
+*.code-workspace
+
+# ---------- 日志与临时文件 ----------
+*.log
+*.tmp
+*.bak
+*.orig
+*.rej
+*.swp
+*~
+
+# ---------- 操作系统 ----------
 Thumbs.db
 desktop.ini
+.DS_Store
