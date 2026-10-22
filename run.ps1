@@ -37,18 +37,36 @@ param(
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = $PSScriptRoot
-$Exe = Join-Path $RepoRoot "build\thu-courses-ics.exe"
 $EnvFile = Join-Path $RepoRoot ".env"
 $EnvExample = Join-Path $RepoRoot ".env.example"
 $PublishKey = "THU_PUBLISH_DIR"
 $SiteRel = "res/coursesAuto.ics"
 
+# 单配置生成器把 exe 放在 build\，多配置生成器（Visual Studio）放在 build\Release\。
+# 两种都找，并优先用最新的那个。
+function Find-BuiltExe {
+    $candidates = @(
+        (Join-Path $RepoRoot "build\thu-courses-ics.exe"),
+        (Join-Path $RepoRoot "build\Release\thu-courses-ics.exe"),
+        (Join-Path $RepoRoot "build\RelWithDebInfo\thu-courses-ics.exe"),
+        (Join-Path $RepoRoot "build\Debug\thu-courses-ics.exe")
+    ) | Where-Object { Test-Path -LiteralPath $_ }
+    if (-not $candidates) { return $null }
+    return ($candidates |
+            Sort-Object { (Get-Item -LiteralPath $_).LastWriteTime } -Descending |
+            Select-Object -First 1)
+}
+
+$Exe = Find-BuiltExe
+
 if ($null -eq $Rest) { $Rest = @() }
 
 # 这些用法不需要凭据，也就没必要追问 .env / 发布目标。
 $NoCredentialRun = $false
+$SelfTestOrHelp = $false
 foreach ($arg in $Rest) {
     if ($arg -in @('--self-test', '--help', '-h', '--offline')) { $NoCredentialRun = $true }
+    if ($arg -in @('--self-test', '--help', '-h')) { $SelfTestOrHelp = $true }
 }
 
 $Interactive = (-not $NonInteractive) -and (-not $NoCredentialRun) -and
@@ -167,8 +185,8 @@ if ($Interactive -and -not (Test-Path -LiteralPath $EnvFile) -and (Test-Path -Li
 }
 
 # 2) 首次运行：编译。
-if (-not (Test-Path -LiteralPath $Exe)) {
-    Write-Host "未找到可执行文件，正在编译（需要 CMake + MinGW-w64）…" -ForegroundColor Cyan
+if (-not $Exe) {
+    Write-Host "未找到可执行文件，正在编译（需要 CMake + MinGW-w64 或 Visual Studio）…" -ForegroundColor Cyan
     try {
         & (Join-Path $RepoRoot "build.ps1")
     }
@@ -177,8 +195,9 @@ if (-not (Test-Path -LiteralPath $Exe)) {
         Write-Host "请确认已安装 CMake ≥ 3.20 与 MinGW-w64（见 README 的「构建」一节）。" -ForegroundColor Yellow
         exit 1
     }
-    if (-not (Test-Path -LiteralPath $Exe)) {
-        Write-Host "编译结束但未找到：$Exe" -ForegroundColor Red
+    $Exe = Find-BuiltExe
+    if (-not $Exe) {
+        Write-Host "编译完成但没有找到 thu-courses-ics.exe。" -ForegroundColor Red
         exit 1
     }
 }
@@ -299,6 +318,9 @@ finally {
 }
 
 if ($code -ne 0) { exit $code }
+
+# --self-test / --help 不生成文件，后面的“已生成/已复制”提示就不适用了。
+if ($SelfTestOrHelp) { exit $code }
 
 # 6) 复制到站点仓库，并自动提交 + 推送。
 if (-not $Publish) {
