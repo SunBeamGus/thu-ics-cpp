@@ -1,0 +1,24 @@
+# 构建产物
+build/
+out/
+cmake-build-*/
+*.exe
+*.obj
+*.o
+*.a
+
+# 本地凭据（只提交 .env.example 模板）
+.env
+
+# 抓取的原始接口数据（含个人真实课表）
+dump/
+
+# 生成的课表文件（默认输出目录）
+res/
+
+# 编辑器 / 系统
+.vs/
+.vscode/
+*.user
+Thumbs.db
+desktop.ini
