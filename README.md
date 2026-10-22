@@ -28,8 +28,8 @@ res/coursesAuto.ics
   情况下重新生成 ICS，便于排查问题。
 - **标准 iCalendar**：UTC 时间、UTF-8、75 字节折行、稳定的 UID，兼容
   Google Calendar / Apple Calendar / Outlook。
-- **双击即用**：仓库根目录的 `run.cmd` 双击运行，首次会自动编译、缺 `.env`
-  时会打开记事本让你填写，跑完窗口不会自动关闭。
+- **双击即用**：仓库根目录的 `run.cmd` 双击运行：首次自动编译、缺 `.env` 时打开
+  记事本让你填写、问你复制到哪个站点仓库；复制完自动提交并推送，窗口不会自动关闭。
 
 ## 快速开始（双击运行）
 
@@ -40,14 +40,18 @@ res/coursesAuto.ics
    - 从 `.env.example` 生成 `.env` 并打开记事本，填好学号与密码后保存、回到窗口按回车；
    - 自动 `cmake` 编译出 `build\thu-courses-ics.exe`。
 4. 登录时如果账号开了两步验证，按提示在窗口里输入 6 位 TOTP 验证码。
-5. 生成结束后窗口会停在 `Press any key to continue . . .`，按任意键关闭。
-   文件在 `res\coursesAuto.ics`。
+5. 生成后脚本会问**要复制到哪个目录**（你自行填写站点仓库路径；同级目录里有
+   `<名字>.github.io` 时会作为默认值直接回车即可）。填一次会被记住，下次只按回车。
+6. 复制完会自动在站点仓库里 `git add` → `git commit` → `git push`，成功后打印提交号。
+7. 结束时窗口停在 `Press any key to continue . . .`，按任意键关闭；
+   本地文件在 `res\coursesAuto.ics`。
 
-如果同级目录存在 `<名字>.github.io` 站点仓库（且含 `res\` 子目录），脚本会问一句
-「生成后是否同时复制到 …」，回车默认不复制。
-
+> 不想复制或不想推送时：在询问处直接回车会沿用上次目标，输入 `n` 跳过复制；
+> 命令行加 `-NoPush` 则只复制不提交。
+>
 > 只想在命令行里跑（不弹交互、适合任务计划）：用
-> `powershell -ExecutionPolicy Bypass -File .\run.ps1 -NonInteractive`。
+> `powershell -ExecutionPolicy Bypass -File .\run.ps1 -NonInteractive`，
+> 它会读取已记住的目标并静默完成复制与推送。
 
 ## 构建
 
@@ -151,24 +155,39 @@ powershell -ExecutionPolicy Bypass -File .\run.ps1
 ### 发布到网站
 
 `res/` 被本仓库的 `.gitignore` 忽略（课表属于个人数据，不适合放在公开的代码仓库
-历史里）。发布时把生成的文件交给你的静态站点仓库（下例假设它与本仓库同级）：
+历史里）。发布动作由脚本完成：复制文件到你指定的站点仓库，然后在该仓库里
+`git add` → `git commit` → `git push`。
+
+目标目录的解析顺序（先命中先用）：
+
+1. 命令行 `-Publish <目录>`
+2. 环境变量 `THU_PUBLISH_DIR`
+3. 本仓库根目录的 `.publish-dir`（上次的选择，已被 `.gitignore` 忽略）
+4. 同级目录下第一个 `*.github.io`（且含 `res\`）——只在交互模式下当作默认值
 
 ```powershell
-# 一步完成：生成 + 复制到站点仓库的 res/coursesAuto.ics
+# 指定目标：复制 + 自动提交 + 自动推送
 powershell -ExecutionPolicy Bypass -File .\run.ps1 -Publish ..\your-username.github.io
+
+# 只复制，不提交也不推送
+powershell -ExecutionPolicy Bypass -File .\run.ps1 -Publish ..\your-username.github.io -NoPush
+
+# 之后就可以无参数运行，脚本会沿用记住的目标
+powershell -ExecutionPolicy Bypass -File .\run.ps1
 ```
 
-双击 `run.cmd` 时不必手写这条命令：只要同级目录里存在 `<名字>.github.io` 且其中
-有 `res\` 子目录，脚本会自动问「生成后是否同时复制到 …」，回答 `y` 即可。
+双击 `run.cmd` 时，脚本会问一句「上次的复制目标：…（回车继续 / n 跳过 / 或输入
+新目录）」，你填的路径会写进 `.publish-dir`，下次直接回车即可。
 
-然后在站点仓库里提交：
+自动推送的行为细节：
 
-```powershell
-cd ..\your-username.github.io
-git add res/coursesAuto.ics
-git commit -m "chore: update res/coursesAuto.ics"
-git push
-```
+- 只 `git add` 这一个文件，并 `git commit -- res/coursesAuto.ics`，站点仓库里其它
+  已暂存的改动不会被卷进这次提交；
+- 内容与上次完全一致时跳过提交，不会产生空提交；
+- 分支没有上游时自动改用 `git push -u origin <当前分支>`；
+- 目标目录不是 git 仓库时只复制、不提交（给出提示）；
+- 推送失败（凭据失效、远程有新提交等）会以退出码 1 结束，文件已提交在本地，
+  你可以在站点仓库里手动处理后再 `git push`。
 
 订阅地址为：
 
@@ -182,6 +201,9 @@ webcal://your-username.github.io/res/coursesAuto.ics
 
 ## 可选参数
 
+上面这些是 `thu-courses-ics.exe` 自己的参数，写在 `run.ps1` / `run.cmd` 后面会原样
+透传：
+
 ```
 --user-id <学号>         --password <密码>
 --semester <N>           --output <路径>
@@ -189,6 +211,14 @@ webcal://your-username.github.io/res/coursesAuto.ics
 --fingerprint <hex>      --dump-dir <目录>
 --offline <目录>         --verbose
 --self-test
+```
+
+`run.ps1` 另外提供三个开关：
+
+```
+-Publish <目录>          复制到该站点仓库的 res\（并记住）
+-NoPush                  只复制，不 git add/commit/push
+-NonInteractive          不询问任何问题（任务计划 / CI 用）
 ```
 
 ### 保存原始数据 / 离线重新生成
@@ -222,6 +252,8 @@ schtasks /Create /SC DAILY /TN "THU Courses ICS" /ST 06:00 /TR "powershell -Exec
 ```
 
 `-NonInteractive` 关闭所有提示（无控制台输入时脚本本来也会自动跳过询问）。
+省略 `-Publish` 也可以：先双击 `run.cmd` 选一次目标把它存进 `.publish-dir`，之后
+定时任务只写 `-NonInteractive` 就会沿用该目标，并把提交直接推送上去。
 
 删除任务：
 
@@ -229,8 +261,8 @@ schtasks /Create /SC DAILY /TN "THU Courses ICS" /ST 06:00 /TR "powershell -Exec
 schtasks /Delete /TN "THU Courses ICS" /F
 ```
 
-任务只负责生成 `res\coursesAuto.ics` 并复制到网站仓库；如需自动发布，再在任务里
-追加网站仓库的 `git add/commit/push`（或另写一个包装脚本）。
+> 无人值守的推送依赖站点仓库已保存好的凭据（Windows 凭据管理器或 SSH key）。
+> 如果推送失败，文件仍会生成并提交在站点仓库的本地，只是没有推上去。
 
 ## 实现说明
 
