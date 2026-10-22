@@ -367,4 +367,36 @@ std::vector<Course> mergeCourses(std::vector<Course> first, const std::vector<Co
     return first;
 }
 
+std::string shortSemesterLabel(const std::string &semesterName) {
+    // 年份：取第一段 4 位数字的后两位。学期名形如 "2026-2027学年秋季学期"。
+    std::string year;
+    for (size_t i = 0; i + 3 < semesterName.size(); ++i) {
+        bool digits = true;
+        for (size_t k = 0; k < 4; ++k) {
+            char c = semesterName[i + k];
+            if (c < '0' || c > '9') { digits = false; break; }
+        }
+        if (digits) {
+            year = semesterName.substr(i + 2, 2);
+            break;
+        }
+    }
+
+    std::string season;
+    if (semesterName.find("秋") != std::string::npos) season = "Fall";
+    else if (semesterName.find("春") != std::string::npos) season = "Spring";
+    else if (semesterName.find("夏") != std::string::npos) season = "Summer";
+    else if (semesterName.find("冬") != std::string::npos) season = "Winter";
+
+    if (season.empty()) {
+        std::string lower = util::toLower(semesterName);
+        if (lower.find("fall") != std::string::npos || lower.find("autumn") != std::string::npos) season = "Fall";
+        else if (lower.find("spring") != std::string::npos) season = "Spring";
+        else if (lower.find("summer") != std::string::npos) season = "Summer";
+        else if (lower.find("winter") != std::string::npos) season = "Winter";
+    }
+
+    return year + season;
+}
+
 } // namespace schedule

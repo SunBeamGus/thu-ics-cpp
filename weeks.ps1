@@ -144,7 +144,22 @@ function Format-IcsDate([datetime] $Date) { return $Date.ToString('yyyyMMdd') }
 # 这样重复运行时「内容没有变化」才成立，不会每次都多一个空提交。
 $stamp = (Format-IcsDate $startDate) + 'T000000Z'
 $weekdayNames = @('周日', '周一', '周二', '周三', '周四', '周五', '周六')
-$calendarName = if ($Term) { "清华大学课表（$Term 周次）" } else { '清华大学课表（周次）' }
+
+# 日历标题用英文短标签："2026-2027学年秋季学期" -> THU-Weeks-26Fall
+function Get-TermLabel([string] $Name) {
+    if (-not $Name) { return '' }
+    $year = ''
+    if ($Name -match '(\d{4})') { $year = $Matches[1].Substring(2) }
+    $season = ''
+    if ($Name -match '秋|[Ff]all|[Aa]utumn') { $season = 'Fall' }
+    elseif ($Name -match '春|[Ss]pring') { $season = 'Spring' }
+    elseif ($Name -match '夏|[Ss]ummer') { $season = 'Summer' }
+    elseif ($Name -match '冬|[Ww]inter') { $season = 'Winter' }
+    return ($year + $season)
+}
+
+$termLabel = Get-TermLabel $Term
+$calendarName = if ($termLabel) { "THU-Weeks-$termLabel" } else { 'THU-Weeks' }
 $uidDomain = '@thu-courses-ics'
 $uidPrefix = 'thu-week-' + (Format-IcsDate $startDate)
 

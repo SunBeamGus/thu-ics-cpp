@@ -42,6 +42,10 @@ ParseResult parsePrimaryJson(const std::string &raw, const thu::Semester &semest
 ParseResult parseSecondaryHtml(const std::string &html);
 std::vector<Course> mergeCourses(std::vector<Course> first, const std::vector<Course> &second);
 
+// 把学期名压成英文短标签，用于日历标题："2026-2027学年秋季学期" -> "26Fall"。
+// 认不出的部分就省略：没有年份只有季节 -> "Fall"，什么都没有 -> ""。
+std::string shortSemesterLabel(const std::string &semesterName);
+
 int periodBeginMinutes(int period);
 int periodEndMinutes(int period);
 bool periodFromBegin(const std::string &hhmm, int &period);

@@ -125,7 +125,7 @@ notepad .\.env
 | `THU_OUTDIR` | 否 | 输出目录，默认 `res`；文件名为 `<代号>.ics` |
 | `THU_OUTPUT` | 否 | 强制指定单个输出文件（仅单账号，留空则用 `<outdir>/<代号>.ics`） |
 | `THU_ID_SALT` | 否 | 学号 → 代号的盐；留空则用本地 `.id-salt`（没有就自动生成） |
-| `THU_CALNAME` | 否 | 日历名称 |
+| `THU_CALNAME` | 否 | 日历**标题**（`X-WR-CALNAME`），默认 `THU-Courses-<学期标签>`，如 `THU-Courses-26Fall` |
 | `THU_FINGERPRINT` | 否 | 设备指纹；默认按“学号 + 计算机名”生成并保持稳定（批量模式忽略） |
 | `THU_TRUST_DEVICE` | 否 | 两步验证时是否在清华 ID 内信任本设备：留空=登录时询问一次；`1`=总是信任；`0`=从不信任 |
 | `HTTPS_PROXY` | 否 | HTTP 代理，如 `http://127.0.0.1:15236`；默认直连 |
@@ -186,6 +186,18 @@ powershell -ExecutionPolicy Bypass -File .\run.ps1
 文件名不是学号，而是**由学号派生出的 16 位十六进制代号**（见下节）。可以用
 `--outdir <目录>` 换输出目录，或用 `--output <文件>` 强行指定单个文件
 （仅单账号可用）。
+
+日历**标题**（日历 App 里显示的名字，`X-WR-CALNAME`）默认是英文短标签：
+
+```
+THU-Courses-26Fall      # 2026-2027学年秋季学期
+THU-Courses-26Spring    # 2026-2027学年春季学期
+THU-Weeks-26Fall        # 周次日历（weeks.ps1）
+```
+
+标签由学期名自动压缩：年份取后两位 + `Fall` / `Spring` / `Summer` / `Winter`
+（中英文学期名都认），认不出就退化成 `THU-Courses` / `THU-Weeks`。
+想自定义就用 `--calname <名称>` 或 `.env` 的 `THU_CALNAME`。
 
 ### 代号（文件名）是怎么来的
 

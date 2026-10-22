@@ -162,6 +162,19 @@ void testIdCode() {
     check(thu::deriveIdCode(salt, "").size() == 16, "empty id still yields a code");
 }
 
+void testSemesterLabel() {
+    std::printf("semester label:\n");
+    checkEqual(schedule::shortSemesterLabel("2026-2027学年秋季学期"), "26Fall", "fall semester");
+    checkEqual(schedule::shortSemesterLabel("2026-2027学年春季学期"), "26Spring", "spring semester");
+    checkEqual(schedule::shortSemesterLabel("2026-2027学年夏季学期"), "26Summer", "summer semester");
+    checkEqual(schedule::shortSemesterLabel("2027-2028学年冬季学期"), "27Winter", "winter + year rollover");
+    checkEqual(schedule::shortSemesterLabel("2026 Fall Semester"), "26Fall", "english input");
+    checkEqual(schedule::shortSemesterLabel("Autumn 2026"), "26Fall", "english input, year last");
+    checkEqual(schedule::shortSemesterLabel("秋季学期"), "Fall", "no year");
+    checkEqual(schedule::shortSemesterLabel(""), "", "empty name");
+    checkEqual(schedule::shortSemesterLabel("未知学期"), "", "unknown name");
+}
+
 void testScheduleParsing() {
     std::printf("schedule parsing:\n");
     const std::string calendarRaw =
@@ -272,6 +285,7 @@ bool run(std::string &report) {
     testTotpWindow();
     testAccountsParsing();
     testIdCode();
+    testSemesterLabel();
     testScheduleParsing();
     testIcs();
     if (gFailures == 0) {
