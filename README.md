@@ -259,6 +259,63 @@ c8e635928c2a7ada	2026010585
 - 多账号时不能用 `--output`（会直接报错），请用 `--outdir`；
 - 每个账号可能各自触发两步验证（除非该设备已被信任），验证码询问是逐个账号进行的。
 
+## 周次日历（第 N 周全天事件）
+
+另一个独立的小工具 `weeks.ps1` / `weeks.cmd`，按学期校历生成一份**全是全天事件**的
+日历，标明第几周，方便在日历里一眼看出"这周是第几周"。
+
+不需要登录、不需要联网：主程序每次生成课表时会把学期信息写到
+`res/semester.json`，`weeks.cmd` 直接读它：
+
+```json
+{
+  "semesterName": "2026-2027学年秋季学期",
+  "firstDay": "2026-09-14",
+  "weekCount": 17
+}
+```
+
+用法：
+
+```powershell
+# 双击 weeks.cmd，或：
+powershell -ExecutionPolicy Bypass -File .\weeks.ps1
+
+# 手动指定学期（没有 semester.json 时）
+powershell -ExecutionPolicy Bypass -File .\weeks.ps1 -Start 2026-09-14 -Weeks 17
+
+# 每天一条（而不是每周一条）
+powershell -ExecutionPolicy Bypass -File .\weeks.ps1 -Mode day
+
+# 换输出位置 / 学期名
+powershell -ExecutionPolicy Bypass -File .\weeks.ps1 -Out res\weeks.ics -Term 2026-2027学年秋季学期
+```
+
+输出（默认 `res\weeks.ics`，纯全天事件、`TRANSP:TRANSPARENT` 不占忙碌时间）：
+
+```
+BEGIN:VEVENT
+UID:thu-week-20260914-w3@thu-courses-ics
+DTSTAMP:20261022T121635Z
+DTSTART;VALUE=DATE:20260928
+DTEND;VALUE=DATE:20261005
+SUMMARY:第 3 周
+DESCRIPTION:2026-2027学年秋季学期 第 3 周（2026-09-28 ~ 2026-10-04）
+TRANSP:TRANSPARENT
+END:VEVENT
+```
+
+| 模式 | 事件数 | 说明 |
+| --- | --- | --- |
+| `-Mode week`（默认） | 每学期 N 条 | 一条事件覆盖周一~周日，日历里整周都显示「第 N 周」 |
+| `-Mode day` | N × 7 条 | 每天一条，标题形如 `第 3 周 · 周三` |
+
+`-Start` 必须是周一（否则直接报错），`-Weeks` 省略时用 `semester.json` 里的周数。
+输出同样是 UTF-8、CRLF、75 字节折行，和主程序的 `.ics` 规范一致。
+
+> `weeks.ics` 不含个人信息，默认只留在本地。想一起发布到站点，手动复制到站点仓库的
+> `res\` 即可（`run.ps1` 只会推送本次运行刚生成的课表文件）。
+
 ### 发布到网站
 
 `res/` 被本仓库的 `.gitignore` 忽略（课表属于个人数据，不适合放在公开的代码仓库
@@ -509,6 +566,8 @@ thu-ics-cpp/
 ├── accounts.txt        # 批量生成的账号列表（本地创建，已忽略）
 ├── run.cmd             # 双击运行入口（纯 ASCII 启动器）
 ├── run.ps1             # 构建检查、.env 引导、运行、复制到站点仓库
+├── weeks.cmd           # 双击生成「第 N 周」全天事件日历
+├── weeks.ps1           # 读 semester.json → 生成 res\weeks.ics
 ├── build.ps1           # 只负责 cmake 配置 + 编译
 ├── src/
 │   ├── main.cpp        # CLI、配置、流程编排

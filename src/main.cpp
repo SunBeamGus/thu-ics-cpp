@@ -199,6 +199,25 @@ void buildAndWrite(const std::vector<schedule::Course> &courses, const thu::Seme
     }
 }
 
+// 把学期信息写到 <outdir>/semester.json：weeks.ps1 靠它生成「第 N 周」日历，
+// 这样不用再登录一次。
+void writeSemesterFile(const Args &args, const thu::Semester &semester) {
+    std::string dir = args.outDir.empty() ? "res" : args.outDir;
+    std::string target = (std::filesystem::path(dir) / "semester.json").string();
+
+    std::string text = "{\r\n";
+    text += "  \"semesterName\": \"" + semester.semesterName + "\",\r\n";
+    text += "  \"firstDay\": \"" + semester.firstDay + "\",\r\n";
+    text += "  \"weekCount\": " + std::to_string(semester.weekCount) + "\r\n";
+    text += "}\r\n";
+
+    if (!util::ensureParentDir(target) || !util::writeFile(target, text)) {
+        std::fprintf(stderr, "  ! 无法写入学期信息：%s\n", target.c_str());
+        return;
+    }
+    std::printf("📆 学期信息已写入 %s（可用 weeks.cmd 生成周次日历）\n", target.c_str());
+}
+
 // 输出文件名固定为 <outdir>/<学号派生代号>.ics；--output 只用于显式指定单个文件。
 std::filesystem::path exeDirectory() {
     wchar_t buffer[MAX_PATH] = {0};
@@ -366,6 +385,7 @@ int runOffline(const Args &args) {
         }
     }
     buildAndWrite(courses, semester, args.calName, outputPathFor(args, args.userId, idSalt), args.verbose);
+    writeSemesterFile(args, semester);
     if (!args.userId.empty() && args.output.empty()) {
         writeIdMap(args, {{thu::deriveIdCode(idSalt, args.userId), args.userId}});
     }
@@ -481,6 +501,7 @@ int runOnline(const Args &args) {
                 schedule::mergeCourses(std::move(primary.courses), secondary.courses);
             buildAndWrite(courses, semester, args.calName, outputPathFor(args, account.userId, ensureSalt()),
                           args.verbose);
+            writeSemesterFile(args, semester);
             if (!code.empty()) codeMap.push_back({code, account.userId});
         } catch (const std::exception &e) {
             ++failed;
