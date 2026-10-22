@@ -203,6 +203,24 @@ powershell -ExecutionPolicy Bypass -File .\run.ps1
 - ⚠️ **`.id-salt` 不要删除、不要公开**：删掉后会重新生成新的盐，所有代号都会变，
   站点上会出现一批新的文件名，旧文件仍在。
 
+### 对照表（`res/id-map.txt`）
+
+每次生成完会写一份本地对照表，避免日后忘了哪个文件是谁的：
+
+```text
+# thu-courses-ics 学号-代号对照表
+# 含学号：仅留在本地，不要提交、不要随站点发布。
+# 代号	学号
+c8e635928c2a7ada	2026010585
+3f2a9c41d7e05b68	2026010586
+```
+
+- 默认写在 `<outdir>/id-map.txt`，可以用 `--id-map <文件>` 换位置；
+- 与已有文件**合并**：同一学号以本次为准，其它历史记录保留，所以分批跑多个学生
+  不会互相覆盖；本次失败的账号不会写进去；
+- 文件含学号，属于本地数据：`res/` 本来就被 `.gitignore` 忽略，`run.ps1` 也只会
+  复制 `*.ics`，所以它不会跟着发布出去。
+
 ## 多学生 / 批量生成
 
 把多个学生的账号写进一个列表文件（建议叫 `accounts.txt`，放在仓库根目录，
@@ -300,6 +318,30 @@ webcal://your-username.github.io/res/<代号>.ics
 
 > 发布出去的是代号文件名，不含学号；但课表内容本身（课程、教室）仍然是个人数据，
 > 只要 URL 公开，拿到链接的人都能看到课表。介意的话就别发布，或放到私有仓库。
+
+#### 推送后自动打印订阅链接
+
+推送成功后，`run.ps1` 会直接列出每个文件的订阅地址，并把代号翻译回学号
+（读 `res/id-map.txt`）：
+
+```
+📅 订阅链接：
+  res/c8e635928c2a7ada.ics    （学号 2026010585）
+    webcal://your-username.github.io/res/c8e635928c2a7ada.ics
+    https://your-username.github.io/res/c8e635928c2a7ada.ics
+```
+
+站点根地址的解析顺序：
+
+1. 命令行 `-PublishUrl https://example.com/`
+2. `.env` 里的 `THU_PUBLISH_URL`
+3. 站点仓库根目录的 `CNAME`（自定义域名）
+4. 从站点仓库的 `git remote origin` 推导：`https://github.com/<user>/<user>.github.io`
+   → `https://<user>.github.io/`；项目仓库（`<user>/<repo>`）→
+   `https://<user>.github.io/<repo>/`
+
+四者都没有时只打印相对路径，并提示用 `-PublishUrl` 指定。`webcal://` 那行可以直接
+点开，让日历 App 订阅。
 
 ## 可选参数
 

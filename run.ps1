@@ -29,6 +29,7 @@
 
 param(
     [string] $Publish,
+    [string] $PublishUrl,
     [switch] $NoPush,
     [switch] $NonInteractive,
     [Parameter(ValueFromRemainingArguments = $true)]
@@ -313,9 +314,77 @@ function Resolve-RepoPath {
     return [System.IO.Path]::GetFullPath((Join-Path $RepoRoot $Path))
 }
 
+# 站点根地址：-PublishUrl > .env 的 THU_PUBLISH_URL > 站点根目录的 CNAME > git remote 推导
+function Get-SiteBaseUrl {
+    param([string] $SiteRoot, [string] $Explicit)
+
+    if ($Explicit) { return $Explicit.Trim().TrimEnd('/') + '/' }
+    $fromEnv = Get-DotEnvValue -Key 'THU_PUBLISH_URL'
+    if ($fromEnv) { return $fromEnv.Trim().TrimEnd('/') + '/' }
+
+    $cname = Join-Path $SiteRoot 'CNAME'
+    if (Test-Path -LiteralPath $cname) {
+        $hostName = Get-Content -LiteralPath $cname -Raw -ErrorAction SilentlyContinue
+        if ($hostName -and $hostName.Trim()) { return 'https://' + $hostName.Trim().TrimEnd('/') + '/' }
+    }
+
+    $config = Join-Path $SiteRoot '.git\config'
+    if (Test-Path -LiteralPath $config) {
+        $match = Select-String -Path $config -Pattern '^\s*url\s*=\s*(\S+)\s*$' | Select-Object -First 1
+        if ($match) {
+            $raw = $match.Matches[0].Groups[1].Value
+            if ($raw -match 'github\.com[:/]+([^/]+)/([^/]+?)(?:\.git)?/?$') {
+                $user = $Matches[1]
+                $repo = $Matches[2]
+                if ($repo -ieq ($user + '.github.io')) { return "https://$user.github.io/" }
+                return "https://$user.github.io/$repo/"
+            }
+        }
+    }
+    return $null
+}
+
+# 推送成功后打印可订阅的地址；一并带上学号（从本地对照表读），方便分辨是谁的。
+function Show-SubscribeLinks {
+    param([string] $SiteRoot, [string[]] $RelPaths, [string] $MapFile)
+
+    if ($RelPaths.Count -eq 0) { return }
+
+    $codeToId = @{}
+    if ($MapFile -and (Test-Path -LiteralPath $MapFile)) {
+        foreach ($line in [System.IO.File]::ReadAllLines($MapFile)) {
+            if ($line.StartsWith('#') -or $line.Trim().Length -eq 0) { continue }
+            $parts = $line -split "`t"
+            if ($parts.Count -ge 2 -and $parts[0].Trim()) { $codeToId[$parts[0].Trim()] = $parts[1].Trim() }
+        }
+    }
+
+    $baseUrl = Get-SiteBaseUrl -SiteRoot $SiteRoot -Explicit $PublishUrl
+
+    Write-Host ""
+    Write-Host "📅 订阅链接：" -ForegroundColor Cyan
+    foreach ($rel in $RelPaths) {
+        $path = $rel -replace '\\', '/'
+        $name = [System.IO.Path]::GetFileNameWithoutExtension($path)
+        $who = ''
+        if ($codeToId.ContainsKey($name)) { $who = '学号 ' + $codeToId[$name] }
+        Write-Host ("  {0}{1}" -f $path, $(if ($who) { "    （" + $who + "）" } else { '' }))
+        if ($baseUrl) {
+            $https = $baseUrl + $path
+            Write-Host ("    {0}" -f ($https -replace '^https://', 'webcal://')) -ForegroundColor Green
+            Write-Host ("    {0}" -f $https)
+        }
+    }
+    if (-not $baseUrl) {
+        Write-Host "  ! 没能推断站点地址，只给出相对路径；用 -PublishUrl 或 .env 的 THU_PUBLISH_URL 指定根地址即可。" -ForegroundColor Yellow
+    }
+}
+
 $explicitOutput = Get-RunArgValue '--output'
 $outDirArg = Get-RunArgValue '--outdir'
 $outDir = if ($outDirArg) { Resolve-RepoPath $outDirArg } else { Join-Path $RepoRoot 'res' }
+$idMapArg = Get-RunArgValue '--id-map'
+$mapFile = if ($idMapArg) { Resolve-RepoPath $idMapArg } else { Join-Path $outDir 'id-map.txt' }
 
 # 5) 运行。
 $runStarted = Get-Date
@@ -408,6 +477,7 @@ if ($LASTEXITCODE -ne 0) {
 & git -C $Publish diff --cached --quiet -- @RelPaths
 if ($LASTEXITCODE -eq 0) {
     Write-Host "文件内容没有变化，跳过提交与推送。" -ForegroundColor Yellow
+    Show-SubscribeLinks -SiteRoot $Publish -RelPaths $RelPaths -MapFile $mapFile
     exit 0
 }
 
@@ -434,4 +504,5 @@ if ($LASTEXITCODE -ne 0) {
 
 $sha = (& git -C $Publish rev-parse --short HEAD)
 Write-Host "已提交并推送：$Publish ($sha)" -ForegroundColor Green
+Show-SubscribeLinks -SiteRoot $Publish -RelPaths $RelPaths -MapFile $mapFile
 exit 0
