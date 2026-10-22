@@ -4,17 +4,24 @@
 # 学期信息（第 1 周周一 + 总周数）优先从 main 程序写下的 res\semester.json 读取，
 # 也可以手动指定 -Start / -Weeks；不需要登录、不需要联网。
 #
+# 默认每天一条（第 N 周 · 周X），想每周一条用 -Mode week。
+# 复制到站点仓库 / 自动提交推送的逻辑与 run.ps1 相同（共用 publish.ps1）。
+#
 # 用法：
 #   powershell -ExecutionPolicy Bypass -File .\weeks.ps1
+#   powershell -ExecutionPolicy Bypass -File .\weeks.ps1 -Mode week
 #   powershell -ExecutionPolicy Bypass -File .\weeks.ps1 -Start 2026-09-14 -Weeks 17
-#   powershell -ExecutionPolicy Bypass -File .\weeks.ps1 -Mode day      # 每天一条
-#   powershell -ExecutionPolicy Bypass -File .\weeks.ps1 -Out res\weeks.ics -Term "2026-2027学年秋季学期"
+#   powershell -ExecutionPolicy Bypass -File .\weeks.ps1 -Publish ..\your-username.github.io
 #
 # -Start <yyyy-MM-dd>  第 1 周的周一
 # -Weeks <N>           总周数
 # -Term <名称>         学期名（只影响日历名与描述）
 # -Out <文件>          输出路径，默认 res\weeks.ics
-# -Mode week|day       week = 每周一条 7 天的事件（默认）；day = 每天一条
+# -Mode week|day       day = 每天一条（默认）；week = 每周一条覆盖 7 天
+# -Publish <目录>      复制到站点仓库的 res\ 并提交推送（沿用 run.ps1 的目录识别）
+# -PublishUrl <url>    打印订阅链接时使用的站点根地址
+# -NoPush              只复制，不提交推送
+# -NonInteractive      不询问任何问题
 # -Quiet               只输出结果，不打印提示
 
 param(
@@ -22,12 +29,19 @@ param(
     [int] $Weeks = 0,
     [string] $Term = '',
     [string] $Out = '',
-    [ValidateSet('week', 'day')][string] $Mode = 'week',
+    [ValidateSet('week', 'day')][string] $Mode = 'day',
+    [string] $Publish,
+    [string] $PublishUrl,
+    [switch] $NoPush,
+    [switch] $NonInteractive,
     [switch] $Quiet
 )
 
 $ErrorActionPreference = 'Stop'
 $RepoRoot = $PSScriptRoot
+$EnvFile = Join-Path $RepoRoot '.env'
+
+. (Join-Path $RepoRoot 'publish.ps1')
 
 function Fail([string] $Message) {
     Write-Host "❌ $Message" -ForegroundColor Red
@@ -126,7 +140,9 @@ function Format-IcsLine([string] $Line) {
 
 function Format-IcsDate([datetime] $Date) { return $Date.ToString('yyyyMMdd') }
 
-$stamp = (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ')
+# DTSTAMP 用学期首日而不是当前时间：同样的输入每次生成完全相同的文件，
+# 这样重复运行时「内容没有变化」才成立，不会每次都多一个空提交。
+$stamp = (Format-IcsDate $startDate) + 'T000000Z'
 $weekdayNames = @('周日', '周一', '周二', '周三', '周四', '周五', '周六')
 $calendarName = if ($Term) { "清华大学课表（$Term 周次）" } else { '清华大学课表（周次）' }
 $uidDomain = '@thu-courses-ics'
@@ -195,7 +211,45 @@ if (-not $Quiet) {
                 $startDate.ToString('yyyy-MM-dd'), $endDate.AddDays(-1).ToString('yyyy-MM-dd'))
     Write-Host ("   事件：{0} 条（{1}）" -f $eventCount, $(if ($Mode -eq 'week') { '每周一条，覆盖 7 天' } else { '每天一条' }))
     if ($info) { Write-Host ("   学期信息来源：{0}" -f $info.Source) -ForegroundColor DarkGray }
+}
+
+# ---------- 发布到站点仓库（与 run.ps1 共用 publish.ps1 的识别逻辑） ----------
+$Interactive = (-not $NonInteractive) -and [Environment]::UserInteractive -and
+               (-not [Console]::IsInputRedirected)
+
+$target = Resolve-PublishTarget -Root $RepoRoot -EnvFile $EnvFile -Explicit $Publish -Interactive $Interactive
+$PublishPath = $target.Path
+
+if ($Interactive -and $target.Source -eq '.env' -and $PublishPath) {
     Write-Host ""
-    Write-Host "把这文件导入日历 App 即可；想每天都能看到周次就用 -Mode day。" -ForegroundColor Gray
+    Write-Host "导出目标（来自 .env 的 THU_PUBLISH_DIR）：$PublishPath" -ForegroundColor Cyan
+    Write-Host "不再询问；如需更改请编辑 .env，或加 -Publish <目录>。" -ForegroundColor DarkGray
+}
+if ($PublishPath -and -not (Confirm-PublishTarget -Path $PublishPath -Source $target.Source)) {
+    $PublishPath = $null
+}
+if ($PublishPath -and $target.Source -eq 'default') {
+    try {
+        Set-DotEnvValue -EnvFile $EnvFile -Key 'THU_PUBLISH_DIR' -Value $PublishPath
+        Write-Host "已写入 .env：THU_PUBLISH_DIR=$PublishPath（下次运行不再询问）" -ForegroundColor Green
+    }
+    catch {
+        Write-Host "写入 .env 失败（不影响本次导出）：$($_.Exception.Message)" -ForegroundColor Yellow
+    }
+}
+
+if (-not $PublishPath) {
+    if (-not $Quiet) {
+        Write-Host ""
+        Write-Host "把这文件导入日历 App 即可；想要能订阅的网址就加 -Publish <站点仓库>。" -ForegroundColor Gray
+    }
+    exit 0
+}
+
+$publishResult = Publish-IcsFiles -SiteRoot $PublishPath -Files @($Out) -NoPush:$NoPush
+if (-not $publishResult.Ok) { exit 1 }
+if ($publishResult.Live) {
+    Show-SubscribeLinks -SiteRoot $PublishPath -RelPaths $publishResult.Rel -MapFile $null `
+        -PublishUrl $PublishUrl -EnvFile $EnvFile
 }
 exit 0

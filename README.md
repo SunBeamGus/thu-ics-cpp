@@ -259,68 +259,12 @@ c8e635928c2a7ada	2026010585
 - 多账号时不能用 `--output`（会直接报错），请用 `--outdir`；
 - 每个账号可能各自触发两步验证（除非该设备已被信任），验证码询问是逐个账号进行的。
 
-## 周次日历（第 N 周全天事件）
-
-另一个独立的小工具 `weeks.ps1` / `weeks.cmd`，按学期校历生成一份**全是全天事件**的
-日历，标明第几周，方便在日历里一眼看出"这周是第几周"。
-
-不需要登录、不需要联网：主程序每次生成课表时会把学期信息写到
-`res/semester.json`，`weeks.cmd` 直接读它：
-
-```json
-{
-  "semesterName": "2026-2027学年秋季学期",
-  "firstDay": "2026-09-14",
-  "weekCount": 17
-}
-```
-
-用法：
-
-```powershell
-# 双击 weeks.cmd，或：
-powershell -ExecutionPolicy Bypass -File .\weeks.ps1
-
-# 手动指定学期（没有 semester.json 时）
-powershell -ExecutionPolicy Bypass -File .\weeks.ps1 -Start 2026-09-14 -Weeks 17
-
-# 每天一条（而不是每周一条）
-powershell -ExecutionPolicy Bypass -File .\weeks.ps1 -Mode day
-
-# 换输出位置 / 学期名
-powershell -ExecutionPolicy Bypass -File .\weeks.ps1 -Out res\weeks.ics -Term 2026-2027学年秋季学期
-```
-
-输出（默认 `res\weeks.ics`，纯全天事件、`TRANSP:TRANSPARENT` 不占忙碌时间）：
-
-```
-BEGIN:VEVENT
-UID:thu-week-20260914-w3@thu-courses-ics
-DTSTAMP:20261022T121635Z
-DTSTART;VALUE=DATE:20260928
-DTEND;VALUE=DATE:20261005
-SUMMARY:第 3 周
-DESCRIPTION:2026-2027学年秋季学期 第 3 周（2026-09-28 ~ 2026-10-04）
-TRANSP:TRANSPARENT
-END:VEVENT
-```
-
-| 模式 | 事件数 | 说明 |
-| --- | --- | --- |
-| `-Mode week`（默认） | 每学期 N 条 | 一条事件覆盖周一~周日，日历里整周都显示「第 N 周」 |
-| `-Mode day` | N × 7 条 | 每天一条，标题形如 `第 3 周 · 周三` |
-
-`-Start` 必须是周一（否则直接报错），`-Weeks` 省略时用 `semester.json` 里的周数。
-输出同样是 UTF-8、CRLF、75 字节折行，和主程序的 `.ics` 规范一致。
-
-> `weeks.ics` 不含个人信息，默认只留在本地。想一起发布到站点，手动复制到站点仓库的
-> `res\` 即可（`run.ps1` 只会推送本次运行刚生成的课表文件）。
-
-### 发布到网站
+## 发布到网站
 
 `res/` 被本仓库的 `.gitignore` 忽略（课表属于个人数据，不适合放在公开的代码仓库
 历史里）。发布动作由脚本完成：复制文件到你指定的站点仓库，然后在该仓库里
-`git add` → `git commit` → `git push`。
+`git add` → `git commit` → `git push`。识别与推送逻辑放在 `publish.ps1`，
+`run.ps1` 和 `weeks.ps1` 共用同一套。
 
 目标目录的解析顺序（先命中先用）：
 
@@ -376,7 +320,7 @@ webcal://your-username.github.io/res/<代号>.ics
 > 发布出去的是代号文件名，不含学号；但课表内容本身（课程、教室）仍然是个人数据，
 > 只要 URL 公开，拿到链接的人都能看到课表。介意的话就别发布，或放到私有仓库。
 
-#### 推送后自动打印订阅链接
+### 推送后自动打印订阅链接
 
 推送成功后，`run.ps1` 会直接列出每个文件的订阅地址，并把代号翻译回学号
 （读 `res/id-map.txt`）：
@@ -400,6 +344,83 @@ webcal://your-username.github.io/res/<代号>.ics
 四者都没有时只打印相对路径，并提示用 `-PublishUrl` 指定。`webcal://` 那行可以直接
 点开，让日历 App 订阅。
 
+## 周次日历（第 N 周全天事件）
+
+另一个独立的小工具 `weeks.ps1` / `weeks.cmd`，按学期校历生成一份**全是全天事件**的
+日历，标明第几周，方便在日历里一眼看出"这周是第几周"。
+
+不需要登录、不需要联网：主程序每次生成课表时会把学期信息写到
+`res/semester.json`，`weeks.cmd` 直接读它：
+
+```json
+{
+  "semesterName": "2026-2027学年秋季学期",
+  "firstDay": "2026-09-14",
+  "weekCount": 17
+}
+```
+
+用法：
+
+```powershell
+# 双击 weeks.cmd，或：
+powershell -ExecutionPolicy Bypass -File .\weeks.ps1
+
+# 每周一条（默认是每天一条）
+powershell -ExecutionPolicy Bypass -File .\weeks.ps1 -Mode week
+
+# 手动指定学期（没有 semester.json 时）
+powershell -ExecutionPolicy Bypass -File .\weeks.ps1 -Start 2026-09-14 -Weeks 17
+
+# 生成后直接发布到站点仓库（目录识别与 run.ps1 完全相同）
+powershell -ExecutionPolicy Bypass -File .\weeks.ps1 -Publish ..\your-username.github.io
+
+# 换输出位置 / 学期名
+powershell -ExecutionPolicy Bypass -File .\weeks.ps1 -Out res\weeks.ics -Term 2026-2027学年秋季学期
+```
+
+输出（默认 `res\weeks.ics`，纯全天事件、`TRANSP:TRANSPARENT` 不占忙碌时间）：
+
+```
+BEGIN:VEVENT
+UID:thu-week-20260914-w3d3@thu-courses-ics
+DTSTAMP:20260914T000000Z
+DTSTART;VALUE=DATE:20260930
+DTEND;VALUE=DATE:20261001
+SUMMARY:第 3 周 · 周三
+DESCRIPTION:2026-2027学年秋季学期 第 3 周 周三（2026-09-30）
+TRANSP:TRANSPARENT
+END:VEVENT
+```
+
+| 模式 | 事件数 | 说明 |
+| --- | --- | --- |
+| `-Mode day`（默认） | N × 7 条 | 每天一条，标题形如 `第 3 周 · 周三`，任何一天都能看到周次 |
+| `-Mode week` | 每学期 N 条 | 一条事件覆盖周一~周日，日历里整周都显示「第 N 周」 |
+
+`-Start` 必须是周一（否则直接报错），`-Weeks` 省略时用 `semester.json` 里的周数。
+输出同样是 UTF-8、CRLF、75 字节折行，和主程序的 `.ics` 规范一致；`DTSTAMP` 固定取
+学期首日，所以同样的输入每次生成完全相同的文件——重复发布不会产生空提交。
+
+### 发布周次日历
+
+`weeks.ps1` 与 `run.ps1` 共用 `publish.ps1`，所以发布规则完全一样：
+
+- 目标解析顺序同样是 `-Publish` → `THU_PUBLISH_DIR` → `.env` → 交互询问
+  （`default` / `once` / 路径 / 留空），回答过 `default` 后两个工具都记住同一处；
+- 支持 `-PublishUrl`（站点根地址）、`-NoPush`（只复制）、`-NonInteractive`；
+- 推送成功后同样打印 `webcal://…` 与 `https://…` 订阅链接。
+
+```powershell
+# 生成 + 复制 + 提交 + 推送 + 打印链接
+powershell -ExecutionPolicy Bypass -File .\weeks.ps1 -Publish ..\your-username.github.io
+
+# 只生成不发布
+powershell -ExecutionPolicy Bypass -File .\weeks.ps1 -NonInteractive
+```
+
+> `weeks.ics` 不含个人信息，可以放心公开（这也是它适合订阅分享的原因）。
+
 ## 可选参数
 
 上面这些是 `thu-courses-ics.exe` 自己的参数，写在 `run.ps1` / `run.cmd` 后面会原样
@@ -419,13 +440,17 @@ webcal://your-username.github.io/res/<代号>.ics
 `--trust-device` / `--no-trust-device` 决定两步验证后是否在清华 ID 内登记本设备；
 两个都不写时，触发两步验证后会问一次（对应 `.env` 的 `THU_TRUST_DEVICE`）。
 
-`run.ps1` 另外提供三个开关：
+`run.ps1` / `weeks.ps1` 另外提供这些开关（两者共用）：
 
 ```
 -Publish <目录>          复制到该站点仓库的 res\（并记住）
+-PublishUrl <url>        打印订阅链接时用的站点根地址
 -NoPush                  只复制，不 git add/commit/push
 -NonInteractive          不询问任何问题（任务计划 / CI 用）
 ```
+
+`weeks.ps1` 自己的参数还有 `-Start` / `-Weeks` / `-Term` / `-Out` / `-Mode` / `-Quiet`，
+见[周次日历](#周次日历第-n-周全天事件)。
 
 ### 保存原始数据 / 离线重新生成
 
@@ -568,6 +593,7 @@ thu-ics-cpp/
 ├── run.ps1             # 构建检查、.env 引导、运行、复制到站点仓库
 ├── weeks.cmd           # 双击生成「第 N 周」全天事件日历
 ├── weeks.ps1           # 读 semester.json → 生成 res\weeks.ics
+├── publish.ps1         # 共用：站点目录识别、复制、git 提交推送、订阅链接
 ├── build.ps1           # 只负责 cmake 配置 + 编译
 ├── src/
 │   ├── main.cpp        # CLI、配置、流程编排
