@@ -40,18 +40,21 @@ res/coursesAuto.ics
    - 从 `.env.example` 生成 `.env` 并打开记事本，填好学号与密码后保存、回到窗口按回车；
    - 自动 `cmake` 编译出 `build\thu-courses-ics.exe`。
 4. 登录时如果账号开了两步验证，按提示在窗口里输入 6 位 TOTP 验证码。
-5. 生成后脚本会问**要复制到哪个目录**（你自行填写站点仓库路径；同级目录里有
-   `<名字>.github.io` 时会作为默认值直接回车即可）。填一次会被记住，下次只按回车。
+5. 生成后脚本会问「生成的 ics 要复制到站点仓库吗？」，三种回答：
+   - **`default`（或 `d`）**：用脚本检测到的同级 `<名字>.github.io`，同时把该路径写进
+     `.env` 的 `THU_PUBLISH_DIR`。**以后运行不再询问**，直接照此导出；
+   - **目录路径**：本次导出到该目录，不写入 `.env`；
+   - **留空或 `n`**：不导出。
 6. 复制完会自动在站点仓库里 `git add` → `git commit` → `git push`，成功后打印提交号。
 7. 结束时窗口停在 `Press any key to continue . . .`，按任意键关闭；
    本地文件在 `res\coursesAuto.ics`。
 
-> 不想复制或不想推送时：在询问处直接回车会沿用上次目标，输入 `n` 跳过复制；
-> 命令行加 `-NoPush` 则只复制不提交。
+> 想改已记住的目标：编辑 `.env` 里的 `THU_PUBLISH_DIR`，或临时用
+> `-Publish <目录>` 覆盖；命令行加 `-NoPush` 则只复制不提交。
 >
 > 只想在命令行里跑（不弹交互、适合任务计划）：用
 > `powershell -ExecutionPolicy Bypass -File .\run.ps1 -NonInteractive`，
-> 它会读取已记住的目标并静默完成复制与推送。
+> 它会读取 `.env` 里的目标并静默完成复制与推送。
 
 ## 构建
 
@@ -162,8 +165,8 @@ powershell -ExecutionPolicy Bypass -File .\run.ps1
 
 1. 命令行 `-Publish <目录>`
 2. 环境变量 `THU_PUBLISH_DIR`
-3. 本仓库根目录的 `.publish-dir`（上次的选择，已被 `.gitignore` 忽略）
-4. 同级目录下第一个 `*.github.io`（且含 `res\`）——只在交互模式下当作默认值
+3. `.env` 里的 `THU_PUBLISH_DIR`——回答过 `default` 后就会写在这里
+4. 交互询问（见下）
 
 ```powershell
 # 指定目标：复制 + 自动提交 + 自动推送
@@ -172,12 +175,20 @@ powershell -ExecutionPolicy Bypass -File .\run.ps1 -Publish ..\your-username.git
 # 只复制，不提交也不推送
 powershell -ExecutionPolicy Bypass -File .\run.ps1 -Publish ..\your-username.github.io -NoPush
 
-# 之后就可以无参数运行，脚本会沿用记住的目标
+# 之后就可以无参数运行，脚本会沿用 .env 里的目标
 powershell -ExecutionPolicy Bypass -File .\run.ps1
 ```
 
-双击 `run.cmd` 时，脚本会问一句「上次的复制目标：…（回车继续 / n 跳过 / 或输入
-新目录）」，你填的路径会写进 `.publish-dir`，下次直接回车即可。
+双击 `run.cmd` 且 `.env` 里还没有目标时，会问「生成的 ics 要复制到站点仓库吗？」：
+
+| 回答 | 行为 |
+| --- | --- |
+| `default` / `d` | 用检测到的同级 `<名字>.github.io`，并把该路径写入 `.env` 的 `THU_PUBLISH_DIR`；**下次不再询问** |
+| 目录路径 | 本次导出到该目录，不写入 `.env` |
+| 留空 / `n` / `否` / `skip` | 不导出 |
+
+`.env` 里已有 `THU_PUBLISH_DIR` 时完全不再提问，只打印一行「导出目标（来自 .env）」。
+想改就编辑 `.env` 那一行，或临时用 `-Publish` 覆盖。
 
 自动推送的行为细节：
 
@@ -252,8 +263,9 @@ schtasks /Create /SC DAILY /TN "THU Courses ICS" /ST 06:00 /TR "powershell -Exec
 ```
 
 `-NonInteractive` 关闭所有提示（无控制台输入时脚本本来也会自动跳过询问）。
-省略 `-Publish` 也可以：先双击 `run.cmd` 选一次目标把它存进 `.publish-dir`，之后
-定时任务只写 `-NonInteractive` 就会沿用该目标，并把提交直接推送上去。
+省略 `-Publish` 也可以：先双击 `run.cmd` 回答一次 `default`，把目标写进 `.env` 的
+`THU_PUBLISH_DIR`，之后定时任务只写 `-NonInteractive` 就会沿用该目标，并把提交
+直接推送上去。
 
 删除任务：
 
