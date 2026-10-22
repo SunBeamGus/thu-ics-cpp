@@ -149,6 +149,17 @@ std::string normalizeTotpCode(const std::string &input) {
     return digits.size() == 6 ? digits : "";
 }
 
+TrustDevice parseTrustDevice(const std::string &text) {
+    std::string value = util::toLower(util::trim(text));
+    if (value == "1" || value == "y" || value == "yes" || value == "true" || value == "on" || value == "trust") {
+        return TrustDevice::Yes;
+    }
+    if (value == "0" || value == "n" || value == "no" || value == "false" || value == "off" || value == "never") {
+        return TrustDevice::No;
+    }
+    return TrustDevice::Ask;
+}
+
 std::string extractSm2PublicKey(const std::string &html) {
     size_t pos = 0;
     while ((pos = html.find("sm2publicKey", pos)) != std::string::npos) {
@@ -251,6 +262,28 @@ std::string Session::promptTotpCode() {
     throw std::runtime_error("未输入有效的 6 位 TOTP 验证码。");
 }
 
+// 询问用户是否在清华 ID 内信任本设备。默认“不信任”（直接回车不会把设备登记为可信）。
+bool Session::askTrustDevice() {
+    for (int attempt = 0; attempt < 5; ++attempt) {
+        std::printf("🔒 是否在清华 ID 内信任本设备？\n"
+                    "   y = 信任：本机以后的登录通常不再要求验证码（可在清华 ID 的设备管理中移除）\n"
+                    "   n = 不信任：每次都要求输入 TOTP 验证码\n"
+                    "   请选择 [y/N]：");
+        std::fflush(stdout);
+        std::string line;
+        if (!std::getline(std::cin, line)) {
+            std::printf("\n没有可用的标准输入，默认不信任本设备。\n");
+            return false;
+        }
+        line = util::toLower(util::trim(line));
+        if (line.empty() || line == "n" || line == "no" || line == "否") return false;
+        if (line == "y" || line == "yes" || line == "是") return true;
+        std::printf("请输入 y 或 n。\n");
+    }
+    std::printf("没有收到有效回答，默认不信任本设备。\n");
+    return false;
+}
+
 std::string Session::handleTwoFactor() {
     http::Response findResp = http_.postForm(kDoubleAuthUrl, {{"action", "FIND_APPROACHES"}});
     jsonx::Json info;
@@ -296,13 +329,24 @@ std::string Session::handleTwoFactor() {
         throw std::runtime_error("两步验证码校验失败：多次输入仍未通过。");
     }
 
-    if (options_.trustDevice) {
+    // 是否信任本设备：由 --trust-device / --no-trust-device / THU_TRUST_DEVICE 决定，
+    // 没配置时在这里问一次，并把答案记在本会话里（同一次运行里再次触发 2FA 不会重复问）。
+    if (options_.trustDevice == TrustDevice::Ask) {
+        options_.trustDevice = askTrustDevice() ? TrustDevice::Yes : TrustDevice::No;
+    }
+
+    if (options_.trustDevice == TrustDevice::No) {
+        std::printf("🔓 未信任本设备：下次登录仍会要求输入 6 位 TOTP 验证码。\n");
+    } else {
         http::Response trustResp = http_.postForm(
             kSaveFingerUrl, {{"fingerprint", options_.fingerprint}, {"deviceName", "coursesAuto"}, {"radioVal", "是"}});
         jsonx::Json trustResult;
         if (!jsonx::Json::parse(trustResp.body, trustResult, parseError) ||
             trustResult.getString("result") != "success") {
             log("信任本设备失败（可忽略）：" + trustResult.getString("msg", parseError));
+        } else {
+            std::printf("🔒 已在本机信任该设备：以后的登录通常不再要求 TOTP 验证码"
+                        "（可在清华 ID 的设备管理中移除）。\n");
         }
     }
 

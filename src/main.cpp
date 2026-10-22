@@ -49,6 +49,8 @@ struct Args {
     std::string fingerprint;
     std::string dumpDir;
     std::string offlineDir;
+    thu::TrustDevice trustDevice = thu::TrustDevice::Ask;
+    bool trustDeviceSet = false;
     bool selfTest = false;
     bool verbose = false;
     bool help = false;
@@ -68,6 +70,9 @@ void printHelp() {
         "  --calname <名称>        日历名称（默认「清华大学课表（学期名）」）\n"
         "  --proxy <host:port>     使用 HTTP 代理；--proxy system 系统代理；--proxy direct 强制直连\n"
         "  --fingerprint <hex>     设备指纹（默认根据账号与本机名自动生成）\n"
+        "  --trust-device          两步验证时在清华 ID 内信任本设备（以后可跳过验证码）\n"
+        "  --no-trust-device       不信任本设备（每次都要求输入 TOTP 验证码）\n"
+        "                          两者都不写时，触发两步验证后会询问一次（或读 THU_TRUST_DEVICE）\n"
         "  --dump-dir <目录>       把原始接口数据保存到目录，便于离线重新生成\n"
         "  --offline <目录>        不登录，直接用 --dump-dir 保存的数据生成 ICS\n"
         "  --self-test             运行内置测试（不需要网络与账号）\n"
@@ -221,6 +226,7 @@ int runOnline(const Args &args) {
     options.password = args.password;
     options.proxy = args.proxy;
     options.verbose = args.verbose;
+    options.trustDevice = args.trustDevice;
     options.fingerprint = args.fingerprint.empty() ? defaultFingerprint(args.userId) : args.fingerprint;
 
     thu::Session session(options);
@@ -320,6 +326,14 @@ int main() {
                 }
             }
             else if (arg == "--fingerprint") args.fingerprint = next("--fingerprint");
+            else if (arg == "--trust-device") {
+                args.trustDevice = thu::TrustDevice::Yes;
+                args.trustDeviceSet = true;
+            }
+            else if (arg == "--no-trust-device") {
+                args.trustDevice = thu::TrustDevice::No;
+                args.trustDeviceSet = true;
+            }
             else if (arg == "--dump-dir") args.dumpDir = next("--dump-dir");
             else if (arg == "--offline") args.offlineDir = next("--offline");
             else if (arg == "--self-test") args.selfTest = true;
@@ -355,6 +369,13 @@ int main() {
             if (args.proxy == "direct") args.proxy.clear();
         }
         if (args.fingerprint.empty()) args.fingerprint = envValue(dotenv, "THU_FINGERPRINT");
+        if (!args.trustDeviceSet) {
+            std::string trustText = envValue(dotenv, "THU_TRUST_DEVICE");
+            if (!trustText.empty()) {
+                args.trustDevice = thu::parseTrustDevice(trustText);
+                args.trustDeviceSet = true;
+            }
+        }
         if (args.dumpDir.empty()) args.dumpDir = envValue(dotenv, "THU_DUMP_DIR");
         if (args.offlineDir.empty()) args.offlineDir = envValue(dotenv, "THU_OFFLINE");
         if (args.output.empty()) args.output = "res/coursesAuto.ics";

@@ -20,12 +20,16 @@ struct CalendarData {
     std::vector<Semester> next;
 };
 
+// 是否在清华 ID 内信任本设备。信任后本机后续登录通常可跳过两步验证；
+// Ask 表示等真正触发两步验证时再询问用户。
+enum class TrustDevice { Ask, No, Yes };
+
 struct Options {
     std::string userId;
     std::string password;
     std::string fingerprint;
     std::string proxy;
-    bool trustDevice = true;
+    TrustDevice trustDevice = TrustDevice::Ask;
     bool verbose = false;
 };
 
@@ -49,6 +53,7 @@ class Session {
    private:
     std::string idLogin(const std::string &sm2PublicKey);
     std::string promptTotpCode();
+    bool askTrustDevice();
     std::string handleTwoFactor();
     std::string roamId(const std::string &payload);
     std::string roamDefault(const std::string &payload);
@@ -67,5 +72,8 @@ std::string extractLoginError(const std::string &html);
 // Returns the 6 digits contained in `input`, ignoring spaces/tabs/dashes, or an
 // empty string if the input is not exactly six digits.
 std::string normalizeTotpCode(const std::string &input);
+// "1"/"y"/"yes"/"true"/"on" -> Yes, "0"/"n"/"no"/"false"/"off" -> No,
+// anything else (including empty and "ask") -> Ask.
+TrustDevice parseTrustDevice(const std::string &text);
 
 } // namespace thu

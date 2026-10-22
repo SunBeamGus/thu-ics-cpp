@@ -38,8 +38,10 @@ res/coursesAuto.ics
 2. 双击仓库根目录的 `run.cmd`。
 3. 首次运行会：
    - 从 `.env.example` 生成 `.env` 并打开记事本，填好学号与密码后保存、回到窗口按回车；
-   - 自动 `cmake` 编译出 `build\thu-courses-ics.exe`。
-4. 登录时如果账号开了两步验证，按提示在窗口里输入 6 位 TOTP 验证码。
+   - 自动编译出 `build\thu-courses-ics.exe`（或 `build\Release\` 下的同名文件）。
+4. 登录时如果账号开了两步验证，按提示在窗口里输入 6 位 TOTP 验证码；随后会问
+   **是否在清华 ID 内信任本设备**：选 `y` 以后基本不用再输验证码，选 `n` 或回车
+   则每次登录都要输。详见[配置凭据](#配置凭据)。
 5. 生成后脚本会问「生成的 ics 要复制到站点仓库吗？」，四种回答：
    - **`default`（或 `d`）**：用脚本检测到的同级 `<名字>.github.io`，同时把该路径写进
      `.env` 的 `THU_PUBLISH_DIR`。**以后运行不再询问**，直接照此导出；
@@ -63,7 +65,7 @@ res/coursesAuto.ics
 
 - Windows 10/11 x64
 - CMake ≥ 3.20
-- MinGW-w64 g++（推荐，已在 GCC 16.2 上验证）或 MSVC
+- MinGW-w64 g++（推荐，已在 GCC 16.2 上验证）或 MSVC（已在 VS 17 2022 上验证）
 
 在仓库根目录执行：
 
@@ -75,7 +77,8 @@ cmake --build build -j
 产物：
 
 ```
-build/thu-courses-ics.exe
+build/thu-courses-ics.exe          # MinGW / Ninja 等单配置生成器
+build/Release/thu-courses-ics.exe  # Visual Studio 等多配置生成器
 ```
 
 也可以直接运行一键脚本（等价于上面两条命令）：
@@ -84,14 +87,18 @@ build/thu-courses-ics.exe
 powershell -ExecutionPolicy Bypass -File .\build.ps1
 ```
 
+`build.ps1` 如果发现 `build\CMakeCache.txt` 已经存在，会**沿用原来的生成器**
+（例如你之前在 Visual Studio 里配置过），不会因为生成器不一致而报错；`run.cmd`
+也会自动在 `build\`、`build\Release\`、`build\Debug\` 里挑最新的那个 exe。
+
 先跑一遍内置测试（不联网、不需要账号）：
 
 ```powershell
-.\build\thu-courses-ics.exe --self-test
+.\build\Release\thu-courses-ics.exe --self-test
 ```
 
 测试覆盖 SM2 标准向量与加解密、SM3、JSON、日期换算、学期与课表解析、
-ICS 生成与折行。
+ICS 生成与折行，以及两步验证的设备信任选项解析。
 
 ## 配置凭据
 
@@ -115,6 +122,7 @@ notepad .\.env
 | `THU_OUTPUT` | 否 | 输出路径，默认 `res/coursesAuto.ics` |
 | `THU_CALNAME` | 否 | 日历名称 |
 | `THU_FINGERPRINT` | 否 | 设备指纹；默认按“学号 + 计算机名”生成并保持稳定 |
+| `THU_TRUST_DEVICE` | 否 | 两步验证时是否在清华 ID 内信任本设备：留空=登录时询问一次；`1`=总是信任；`0`=从不信任 |
 | `HTTPS_PROXY` | 否 | HTTP 代理，如 `http://127.0.0.1:15236`；默认直连 |
 
 也可以使用同名命令行参数覆盖（见 `--help`）。**密码建议只写在 `.env`**，
@@ -123,6 +131,14 @@ notepad .\.env
 > 如果账号启用了 TOTP 两步验证，登录时程序会暂停并提示：
 > `请输入身份验证器 App 中的 6 位 TOTP 验证码`。输入当前 6 位数字即可，
 > 不需要把密钥保存到任何文件；输入 `q` 可取消。
+>
+> 验证码通过后还会问一次**是否在清华 ID 内信任本设备**（`[y/N]`，默认不信任）：
+> - 选 `y`：调用 `b/doubleAuth/personal/saveFinger` 登记本机指纹，以后登录通常
+>   不再要求验证码；想撤销可到 id.tsinghua.edu.cn 的设备管理里删除；
+> - 选 `n` 或直接回车：不登记，**下次登录（哪怕第二天）仍会要求输入 TOTP 验证码**。
+>
+> 不想每次都被问，就用 `--trust-device` / `--no-trust-device` 或
+> `.env` 的 `THU_TRUST_DEVICE=1|0` 一次性定好。
 
 > 清华的登录入口只对国内网络开放；如果你使用代理，请让
 > `*.tsinghua.edu.cn` 直连。GitHub Actions 等海外 runner 无法完成登录，
@@ -222,9 +238,13 @@ webcal://your-username.github.io/res/coursesAuto.ics
 --semester <N>           --output <路径>
 --calname <名称>         --proxy <host:port>
 --fingerprint <hex>      --dump-dir <目录>
+--trust-device           --no-trust-device
 --offline <目录>         --verbose
 --self-test
 ```
+
+`--trust-device` / `--no-trust-device` 决定两步验证后是否在清华 ID 内登记本设备；
+两个都不写时，触发两步验证后会问一次（对应 `.env` 的 `THU_TRUST_DEVICE`）。
 
 `run.ps1` 另外提供三个开关：
 
@@ -289,7 +309,9 @@ schtasks /Delete /TN "THU Courses ICS" /F
    `i_user` / `i_pass` / `fingerPrint` / `fingerGenPrint` / `i_captcha`；
 4. 若返回“二次认证”，走 `b/doubleAuth/login` 的
    `FIND_APPROACHES` → `SEND_CODE(type=totp)`，然后提示你在终端**手动输入
-   6 位 TOTP 验证码**，再调用 `VERITY_TOTP_CODE`；可同时信任本机指纹；
+   6 位 TOTP 验证码**，再调用 `VERITY_TOTP_CODE`；通过后按
+   `THU_TRUST_DEVICE` / `--trust-device` / `--no-trust-device` 的决定（没配置时
+   当场询问）调用 `b/doubleAuth/personal/saveFinger` 登记本机指纹；
 5. 从成功页取回调链接，建立 WebVPN 会话，再执行一次
    `form/10000ea...` 的 ID 登录和 `oauth.tsinghua.edu.cn/lb-auth/lbredirect`
    跳转。
@@ -339,8 +361,8 @@ GB/T 32918 实现；已用 `sm-crypto` 生成的密文做双向交叉验证。
   请在普通桌面终端中运行。
 - **需要国内网络**：登录服务对海外网络不开放；请让清华域名直连。
 - **两步验证**：登录时手动输入 TOTP 验证码；微信/短信验证无法自动完成。
-  无人值守的定时任务只有在“本设备已被信任”时才不会触发 2FA，否则会等待
-  标准输入并报错。
+  填完验证码后可以选择是否信任本设备：信任后本机后续登录通常不再触发 2FA，
+  无人值守的定时任务才有可能跑通；不信任则每次都会等标准输入，定时任务会报错。
 - **二级课表**：页面格式没有公开接口，解析采用宽松匹配；失败时只警告并
   继续使用教学日历，不影响主课表。
 - **自定义日程**：`getSchedule()` 不包含 App 本地添加的自定义日程，

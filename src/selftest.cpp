@@ -91,6 +91,15 @@ void testLoginPageParsing() {
     checkEqual(thu::normalizeTotpCode("123-456"), "123456", "TOTP input with dash");
     check(thu::normalizeTotpCode("12345").empty(), "TOTP input too short");
     check(thu::normalizeTotpCode("12a456").empty(), "TOTP input non-digit");
+
+    check(thu::parseTrustDevice("1") == thu::TrustDevice::Yes, "trust device: 1");
+    check(thu::parseTrustDevice(" YES ") == thu::TrustDevice::Yes, "trust device: YES");
+    check(thu::parseTrustDevice("true") == thu::TrustDevice::Yes, "trust device: true");
+    check(thu::parseTrustDevice("no") == thu::TrustDevice::No, "trust device: no");
+    check(thu::parseTrustDevice("0") == thu::TrustDevice::No, "trust device: 0");
+    check(thu::parseTrustDevice("Never") == thu::TrustDevice::No, "trust device: Never");
+    check(thu::parseTrustDevice("ask") == thu::TrustDevice::Ask, "trust device: ask");
+    check(thu::parseTrustDevice("") == thu::TrustDevice::Ask, "trust device: empty");
 }
 
 void testScheduleParsing() {
