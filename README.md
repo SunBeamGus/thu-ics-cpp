@@ -40,9 +40,10 @@ res/coursesAuto.ics
    - 从 `.env.example` 生成 `.env` 并打开记事本，填好学号与密码后保存、回到窗口按回车；
    - 自动 `cmake` 编译出 `build\thu-courses-ics.exe`。
 4. 登录时如果账号开了两步验证，按提示在窗口里输入 6 位 TOTP 验证码。
-5. 生成后脚本会问「生成的 ics 要复制到站点仓库吗？」，三种回答：
+5. 生成后脚本会问「生成的 ics 要复制到站点仓库吗？」，四种回答：
    - **`default`（或 `d`）**：用脚本检测到的同级 `<名字>.github.io`，同时把该路径写进
      `.env` 的 `THU_PUBLISH_DIR`。**以后运行不再询问**，直接照此导出；
+   - **`once`（或 `o`）**：只在本次使用检测到的同级目录，不写入 `.env`；
    - **目录路径**：本次导出到该目录，不写入 `.env`；
    - **留空或 `n`**：不导出。
 6. 复制完会自动在站点仓库里 `git add` → `git commit` → `git push`，成功后打印提交号。
@@ -184,6 +185,7 @@ powershell -ExecutionPolicy Bypass -File .\run.ps1
 | 回答 | 行为 |
 | --- | --- |
 | `default` / `d` | 用检测到的同级 `<名字>.github.io`，并把该路径写入 `.env` 的 `THU_PUBLISH_DIR`；**下次不再询问** |
+| `once` / `o` | 只在本次使用检测到的同级目录，不写入 `.env` |
 | 目录路径 | 本次导出到该目录，不写入 `.env` |
 | 留空 / `n` / `否` / `skip` | 不导出 |
 

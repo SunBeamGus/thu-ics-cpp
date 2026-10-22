@@ -6,6 +6,8 @@
 #
 #   default / d  -> copy to the detected *.github.io folder AND remember it in
 #                   .env (THU_PUBLISH_DIR), so later runs stop asking
+#   once / o     -> copy to the detected *.github.io folder for this run only,
+#                   nothing is written to .env
 #   a path       -> copy there for this run only, nothing is written to .env
 #   empty / n    -> do not copy
 #
@@ -211,6 +213,7 @@ if ($Interactive -and -not $TargetSource) {
     $Suggestion = Find-SiblingSiteRepo -Preferred $null
     if ($Suggestion) { Write-Host "检测到站点仓库：$Suggestion" -ForegroundColor Cyan }
     Write-Host "  default / d   → 用检测到的目录，并写入 .env（以后不再询问）" -ForegroundColor Gray
+    Write-Host "  once / o      → 只在本次使用检测到的目录（不写入 .env）" -ForegroundColor Gray
     Write-Host "  目录路径      → 本次导出到该目录（不写入 .env）" -ForegroundColor Gray
     Write-Host "  留空 / n      → 不导出" -ForegroundColor Gray
 
@@ -218,6 +221,17 @@ if ($Interactive -and -not $TargetSource) {
     if ([string]::IsNullOrWhiteSpace($answer) -or $answer.Trim() -match '^(n|no|否|跳过|skip)$') {
         $Publish = $null
         $TargetSource = "不导出"
+    }
+    elseif ($answer.Trim() -match '^(once|o|本次|这次|临时|just|now)$') {
+        if (-not $Suggestion) {
+            Write-Host "没有检测到同级站点仓库，无法使用 once；请直接输入目录路径，或留空跳过。" -ForegroundColor Yellow
+            $Publish = $null
+            $TargetSource = "不导出"
+        }
+        else {
+            $Publish = $Suggestion
+            $TargetSource = "once"
+        }
     }
     elseif ($answer.Trim() -match '^(default|d|默认|记入|记住|save)$') {
         if (-not $Suggestion) {
