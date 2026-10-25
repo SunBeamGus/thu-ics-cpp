@@ -26,6 +26,7 @@ add_library(thu_ics_core STATIC
     src/thu.cpp
     src/schedule.cpp
     src/ics.cpp
+    src/location.cpp
     src/selftest.cpp
 )
 

@@ -59,9 +59,33 @@ std::string courseKey(const schedule::Course &course) {
     return buf;
 }
 
+bool looksNumeric(const std::string &text) {
+    if (text.empty()) return false;
+    for (char c : text) {
+        if ((c >= '0' && c <= '9') || c == '.' || c == '-' || c == '+') continue;
+        return false;
+    }
+    return true;
+}
+
+// 把课程表里的原始地点串交给映射表，拿到显示名与可选坐标。
+void applyLocation(Event &event, const std::string &raw, location::Resolver *resolver) {
+    if (resolver == nullptr) {
+        event.location = raw;
+        return;
+    }
+    location::Place place = resolver->resolve(raw);
+    event.location = place.label;
+    if (looksNumeric(place.lat) && looksNumeric(place.lon)) {
+        event.geoLat = place.lat;
+        event.geoLon = place.lon;
+    }
+}
+
 } // namespace
 
-std::vector<Event> buildEvents(const std::vector<schedule::Course> &courses, const thu::Semester &semester) {
+std::vector<Event> buildEvents(const std::vector<schedule::Course> &courses, const thu::Semester &semester,
+                               location::Resolver *resolver) {
     std::vector<Event> events;
     int firstDay = 0;
     if (!util::parseDateDays(semester.firstDay, firstDay)) return events;
@@ -82,7 +106,7 @@ std::vector<Event> buildEvents(const std::vector<schedule::Course> &courses, con
                 event.dtStart = utcIcs(days, beginMinutes);
                 event.dtEnd = utcIcs(days, endMinutes);
                 event.summary = course.name;
-                event.location = course.location;
+                applyLocation(event, course.location, resolver);
                 event.description = "第" + std::to_string(week) + "周 " + kDayNames[slice.dayOfWeek] + " 第" +
                                     std::to_string(slice.begin) + "-" + std::to_string(slice.end) + "节";
                 events.push_back(std::move(event));
@@ -100,7 +124,7 @@ std::vector<Event> buildEvents(const std::vector<schedule::Course> &courses, con
             event.dtStart = utcIcs(days, exam.beginMinutes);
             event.dtEnd = utcIcs(days, endMinutes);
             event.summary = course.name;
-            event.location = course.location;
+            applyLocation(event, course.location, resolver);
             char timeText[16];
             std::snprintf(timeText, sizeof(timeText), "%02d:%02d-%02d:%02d", exam.beginMinutes / 60,
                           exam.beginMinutes % 60, endMinutes / 60, endMinutes % 60);
@@ -140,6 +164,11 @@ std::string generate(const std::vector<Event> &events, const std::string &calend
         lines.push_back("DTEND:" + event.dtEnd);
         lines.push_back("SUMMARY:" + escapeIcs(event.summary));
         if (!event.location.empty()) lines.push_back("LOCATION:" + escapeIcs(event.location));
+        if (!event.geoLat.empty() && !event.geoLon.empty()) {
+            lines.push_back("GEO:" + event.geoLat + ";" + event.geoLon);
+            lines.push_back("X-APPLE-STRUCTURED-LOCATION;VALUE=URI;X-TITLE=\"" + escapeIcs(event.location) + "\":geo:" +
+                            event.geoLat + "," + event.geoLon);
+        }
         if (!event.description.empty()) lines.push_back("DESCRIPTION:" + escapeIcs(event.description));
         lines.push_back("END:VEVENT");
     }

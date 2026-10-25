@@ -59,6 +59,12 @@ CMakeScripts/
 # 含学号的本地对照表（默认落在 res\ 里，这里兜底）
 /id-map.txt
 
+# 本地地点映射（由 locations.example.csv 复制而来）
+/locations.csv
+
+# 未匹配地点清单（一般落在 res\ 里，这里兜底）
+/unmatched-locations.txt
+
 # ---------- 个人数据：抓取的原始接口数据与生成的课表 ----------
 /dump/
 /res/

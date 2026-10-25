@@ -433,6 +433,69 @@ powershell -ExecutionPolicy Bypass -File .\weeks.ps1 -NonInteractive
 
 > `weeks.ics` 不含个人信息，可以放心公开（这也是它适合订阅分享的原因）。
 
+## 地点映射（LOCATION / GEO）
+
+课程表里的 `dd` 字段是「三教1101」「六教6A216」这种简写。程序会用一张可选的映射表
+把它换成**规范楼名 + 可选坐标**，写进日历的 `LOCATION`，有坐标时还会写 `GEO` 和
+Apple 日历的定位字段。
+
+映射表是 4 列 CSV，默认找仓库根目录的 `locations.csv`，没有就退到随仓库分发的
+`locations.example.csv`（只有楼名、坐标留空）：
+
+```text
+alias,name,lat,lon
+三教,第三教学楼,,
+六教,第六教学楼,,
+```
+
+使用方法：
+
+```powershell
+# 一次性准备（之后自动生效）
+copy .\locations.example.csv .\locations.csv
+notepad .\locations.csv      # 补 alias / 填坐标
+
+# 也可以显式指定
+.\build\thu-courses-ics.exe --locations ..\my\locations.csv
+# 或写进 .env： THU_LOCATIONS=locations.csv
+```
+
+**拆分规则**：从「第一个数字」处切开，前面是楼名、后面是教室号
+（`六教6A216` → `六教` + `6A216`；`东操` 没有数字，整串就是楼名）。
+
+**匹配规则**：先规范化楼名——全角转半角、去空格、
+`3教` / `第三教学楼` / `三教学楼` 都归一成 `三教`——再查表。命中就输出
+`name + " " + 教室号`，没命中保留原始文本。
+
+**坐标写进哪里**：
+
+```
+LOCATION:第三教学楼 1101
+GEO:39.9994;116.3269
+X-APPLE-STRUCTURED-LOCATION;VALUE=URI;X-TITLE="第三教学楼 1101":geo:39.9994,116.3269
+```
+
+`GEO` 是 RFC 5545 的字段，Google/Apple 日历可点开地图；`X-APPLE-STRUCTURED-LOCATION`
+让 Apple 日历直接显示"导航"。
+
+**坐标写哪个坐标系**：程序**原样**写入，不转换。高德 / Apple 地图（中国区）用
+GCJ-02，Google 地图 / OSM 用 WGS84，两者差几百米——按你实际用的 App 填。
+只想要"规范楼名"的收益就把坐标留空，`GEO` 那两行会自动省略。
+
+**没匹配上的怎么办**：每次生成后会写 `res/unmatched-locations.txt`，
+按出现次数排序：
+
+```
+# 次数	原始地点
+12	东主楼10-201
+3	旧水利馆
+```
+
+照着补进 `locations.csv` 就行，下次就是规范名称（+ 坐标）。
+
+> 精度目标是「楼」：坐标请取建筑中心点，不要把某个门的坐标当成整栋楼，
+> 否则同一栋楼的不同教室会漂到不同位置。
+
 ## 可选参数
 
 上面这些是 `thu-courses-ics.exe` 自己的参数，写在 `run.ps1` / `run.cmd` 后面会原样
@@ -442,6 +505,7 @@ powershell -ExecutionPolicy Bypass -File .\weeks.ps1 -NonInteractive
 --user-id <学号>         --password <密码>
 --accounts <文件>        --outdir <目录>
 --output <文件>          --id-salt <文本>
+--id-map <文件>          --locations <文件>
 --semester <N>           --calname <名称>
 --proxy <host:port>      --fingerprint <hex>
 --dump-dir <目录>        --trust-device
@@ -451,6 +515,7 @@ powershell -ExecutionPolicy Bypass -File .\weeks.ps1 -NonInteractive
 
 `--trust-device` / `--no-trust-device` 决定两步验证后是否在清华 ID 内登记本设备；
 两个都不写时，触发两步验证后会问一次（对应 `.env` 的 `THU_TRUST_DEVICE`）。
+`--locations` 指定地点映射表，见[地点映射](#地点映射location--geo)。
 
 `run.ps1` / `weeks.ps1` 另外提供这些开关（两者共用）：
 
@@ -601,6 +666,8 @@ thu-ics-cpp/
 ├── .env.example
 ├── .id-salt            # 学号 → 代号的盐（首次运行生成，已忽略，务必保密）
 ├── accounts.txt        # 批量生成的账号列表（本地创建，已忽略）
+├── locations.example.csv  # 地点映射模板（alias,name,lat,lon）
+├── locations.csv       # 自己的地点映射（由上面的模板复制，已忽略）
 ├── run.cmd             # 双击运行入口（纯 ASCII 启动器）
 ├── run.ps1             # 构建检查、.env 引导、运行、复制到站点仓库
 ├── weeks.cmd           # 双击生成「第 N 周」全天事件日历
@@ -612,6 +679,7 @@ thu-ics-cpp/
 │   ├── thu.cpp/.h      # 登录、2FA、WebVPN 漫游、原始接口
 │   ├── schedule.cpp/.h # 学期/课表解析、节次表
 │   ├── ics.cpp/.h      # 事件展开与 iCalendar 序列化
+│   ├── location.cpp/.h # 地点映射（楼名规范化 + 坐标）
 │   ├── http.cpp/.h     # WinHTTP 客户端（Cookie、重定向、代理）
 │   ├── sm2.cpp/.h      # SM2（含 256 位模运算）
 │   ├── sm3.cpp/.h      # SM3

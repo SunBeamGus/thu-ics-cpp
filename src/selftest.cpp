@@ -2,6 +2,7 @@
 
 #include "ics.h"
 #include "json.h"
+#include "location.h"
 #include "schedule.h"
 #include "sm2.h"
 #include "thu.h"
@@ -175,6 +176,57 @@ void testSemesterLabel() {
     checkEqual(schedule::shortSemesterLabel("未知学期"), "", "unknown name");
 }
 
+void testLocationMapping() {
+    std::printf("location mapping:\n");
+
+    std::string building;
+    std::string room;
+    location::Resolver::split("三教1101", building, room);
+    checkEqual(building, "三教", "split: chinese building");
+    checkEqual(room, "1101", "split: room");
+    location::Resolver::split("六教6A216", building, room);
+    checkEqual(building, "六教", "split: letter room building");
+    checkEqual(room, "6A216", "split: letter room");
+    location::Resolver::split("东操", building, room);
+    checkEqual(building, "东操", "split: no room");
+    check(room.empty(), "split: no room part");
+
+    checkEqual(location::Resolver::normalizeBuilding("第三教学楼"), "三教", "normalize 第X教学楼");
+    checkEqual(location::Resolver::normalizeBuilding("3教"), "三教", "normalize ascii digit");
+    checkEqual(location::Resolver::normalizeBuilding(" 三 教 "), "三教", "normalize spaces");
+    checkEqual(location::Resolver::normalizeBuilding("三教（主楼）"), "三教(主楼)", "normalize full-width parens");
+
+    location::Resolver resolver;
+    std::vector<std::string> problems;
+    const std::string csv =
+        "alias,name,lat,lon\r\n"
+        "三教,第三教学楼,39.9994,116.3269\r\n"
+        "六教,第六教学楼,,\r\n"
+        "# 注释行\r\n"
+        "bad-line-without-comma\r\n";
+    check(resolver.loadFromText(csv, &problems) == 2, "load 2 entries");
+    check(problems.size() == 1, "one bad line reported");
+
+    location::Place place = resolver.resolve("三教1101");
+    check(place.matched, "matched: 三教1101");
+    checkEqual(place.label, "第三教学楼 1101", "label keeps room");
+    checkEqual(place.lat, "39.9994", "geo latitude");
+    checkEqual(place.lon, "116.3269", "geo longitude");
+
+    location::Place noGeo = resolver.resolve("六教6A216");
+    checkEqual(noGeo.label, "第六教学楼 6A216", "label without geo");
+    check(noGeo.lat.empty() && noGeo.lon.empty(), "no geo when blank");
+
+    location::Place viaFullName = resolver.resolve("第三教学楼1101");
+    check(viaFullName.matched, "matched: 第三教学楼1101");
+
+    location::Place unknown = resolver.resolve("东主楼10-201");
+    check(!unknown.matched, "unmatched stays unmatched");
+    checkEqual(unknown.label, "东主楼10-201", "unmatched keeps raw text");
+    check(resolver.unmatched().size() == 1, "unmatched recorded once");
+    checkEqual(std::to_string(resolver.unmatched().at("东主楼10-201")), "1", "unmatched count");
+}
+
 void testScheduleParsing() {
     std::printf("schedule parsing:\n");
     const std::string calendarRaw =
@@ -286,6 +338,7 @@ bool run(std::string &report) {
     testAccountsParsing();
     testIdCode();
     testSemesterLabel();
+    testLocationMapping();
     testScheduleParsing();
     testIcs();
     if (gFailures == 0) {
