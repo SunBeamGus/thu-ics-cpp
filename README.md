@@ -496,6 +496,30 @@ GCJ-02，Google 地图 / OSM 用 WGS84，两者差几百米——按你实际用
 > 精度目标是「楼」：坐标请取建筑中心点，不要把某个门的坐标当成整栋楼，
 > 否则同一栋楼的不同教室会漂到不同位置。
 
+### 坐标是怎么来的（GCJ-02）
+
+`locations.csv` 里的坐标由 `tools/make_locations.py` 生成，不要手抄：
+
+1. `tools/inspect_osm.py` 把 Overpass 返回的校园建筑（含 relation）导成清单，方便核对楼名；
+2. `tools/make_locations.py` 取每栋楼的轮廓中心点（多段建筑如三教、六教取各段平均），
+   再用标准算法把 **WGS84 → GCJ-02** 转换，写进 `locations.csv`。
+
+```powershell
+# 需要联网取一次 OSM 数据（Overpass，无需 key）
+# 1) 取数据（浏览器或 curl 都行，注意带 User-Agent）
+# 2) 生成 / 刷新 locations.csv
+python tools\make_locations.py locations.csv
+```
+
+- **GCJ-02 对应高德 / Apple 地图（中国区）**；Google 地图或 OSM 本身是 WGS84，
+  在那边会有几百米偏差（用它们自己的搜索即可）。
+- 数据来自 **OpenStreetMap（ODbL）**，见
+  [版权说明](https://www.openstreetmap.org/copyright)。`locations.example.csv`
+  因此只放楼名、不放坐标；坐标落在本地的 `locations.csv`（已被 `.gitignore` 忽略）。
+- 精度是「楼」：OSM 的建筑轮廓 vs 高德自己的 POI 可能差几十米，够用来导航到楼下。
+- 已转换的楼栋：一~六教、主楼/东主楼/西主楼、清华学堂、新清华学堂、技科楼、
+  蒙民伟楼、建筑馆、明理楼、综体、东操/西操、图书馆/逸夫馆、法律图书馆、人文社科图书馆。
+
 ## 可选参数
 
 上面这些是 `thu-courses-ics.exe` 自己的参数，写在 `run.ps1` / `run.cmd` 后面会原样
@@ -686,5 +710,8 @@ thu-ics-cpp/
 │   ├── json.cpp/.h     # 极简 JSON 解析
 │   ├── util.cpp/.h     # 字符串、日期、编码、折行
 │   └── selftest.cpp/.h
-└── tests/tests.cpp
+├── tests/tests.cpp
+└── tools/
+    ├── inspect_osm.py  # 导出 OSM 校园建筑清单，核对楼名
+    └── make_locations.py  # 生成 locations.csv（OSM → GCJ-02）
 ```
